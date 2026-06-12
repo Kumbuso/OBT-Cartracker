@@ -405,7 +405,7 @@ function AddDeviceSheet({
               <View style={styles.addField}>
                 <Text style={styles.addLabel}>SIM Card Number  (optional)</Text>
                 <View style={styles.inputRow}>
-                  <Ionicons name="sim-outline" size={16} color={Colors.textMuted} />
+                  <Ionicons name="cellular-outline" size={16} color={Colors.textMuted} />
                   <TextInput
                     style={styles.inputText}
                     value={sim}
@@ -687,7 +687,7 @@ const styles = StyleSheet.create({
 
   // Modal / Sheet
   overlay:   { flex: 1, justifyContent: 'flex-end' },
-  overlayBg: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  overlayBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     backgroundColor: Colors.cardBackground,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,

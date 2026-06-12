@@ -1044,7 +1044,7 @@ const styles = StyleSheet.create({
 
   // ── Modal / Sheet ────────────────────────────────────────────────────────────
   overlay:   { flex: 1, justifyContent: 'flex-end' },
-  overlayBg: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  overlayBg: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
   sheet: {
     backgroundColor: Colors.cardBackground,
     borderTopLeftRadius: 24, borderTopRightRadius: 24,

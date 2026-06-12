@@ -7,6 +7,10 @@ import {
   TouchableOpacity,
   Linking,
   Alert,
+  Modal,
+  TextInput,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -21,6 +25,33 @@ export default function VehicleDetailScreen() {
   const vehicle = mockVehicles.find((v) => v.id === id);
 
   const [callLoading, setCallLoading] = useState(false);
+
+  // ── Mileage state ────────────────────────────────────────────────────────────
+  const [mileage, setMileage] = useState({
+    odometer:         vehicle?.odometer ?? 0,
+    serviceIntervalKm: 10000,
+    lastServiceKm:    Math.max(0, (vehicle?.odometer ?? 0) - 3500),
+    dailyLimitKm:     250,
+    monthlyTargetKm:  4000,
+  });
+  const [showMileageSheet, setShowMileageSheet] = useState(false);
+  const [draft, setDraft] = useState(mileage);
+
+  const openMileageSheet = () => {
+    setDraft(mileage);
+    setShowMileageSheet(true);
+  };
+  const saveMileage = () => {
+    const parsed = {
+      odometer:          Math.max(0, parseInt(String(draft.odometer),          10) || 0),
+      serviceIntervalKm: Math.max(1, parseInt(String(draft.serviceIntervalKm), 10) || 10000),
+      lastServiceKm:     Math.max(0, parseInt(String(draft.lastServiceKm),     10) || 0),
+      dailyLimitKm:      Math.max(1, parseInt(String(draft.dailyLimitKm),      10) || 250),
+      monthlyTargetKm:   Math.max(1, parseInt(String(draft.monthlyTargetKm),   10) || 4000),
+    };
+    setMileage(parsed);
+    setShowMileageSheet(false);
+  };
 
   if (!vehicle) {
     return (
@@ -129,7 +160,7 @@ export default function VehicleDetailScreen() {
         <View style={styles.metricsRow}>
           <MetricBox icon="speedometer"  value={`${vehicle.speed}`}                 unit="km/h" label="Speed"    color={Colors.accent} />
           <MetricBox icon="water"        value={`${vehicle.fuelLevel}`}             unit="%"    label="Fuel"     color={vehicle.fuelLevel < 25 ? Colors.danger : Colors.statusActive} />
-          <MetricBox icon="analytics"    value={(vehicle.odometer / 1000).toFixed(1)} unit="k km" label="Odometer" color={Colors.primaryLight} />
+          <MetricBox icon="analytics"    value={(mileage.odometer / 1000).toFixed(1)} unit="k km" label="Odometer" color={Colors.primaryLight} />
         </View>
 
         {/* Driver info card */}
@@ -202,6 +233,177 @@ export default function VehicleDetailScreen() {
             </View>
           </>
         )}
+
+        {/* ── Mileage Settings ─────────────────────────────── */}
+        {(() => {
+          const nextServiceKm  = mileage.lastServiceKm + mileage.serviceIntervalKm;
+          const kmToService    = nextServiceKm - mileage.odometer;
+          const pct            = Math.min(1, Math.max(0, (mileage.odometer - mileage.lastServiceKm) / mileage.serviceIntervalKm));
+          const overdue        = kmToService <= 0;
+          const urgent         = !overdue && pct >= 0.85;
+          const barColor       = overdue ? Colors.danger : urgent ? Colors.warning : Colors.statusActive;
+
+          return (
+            <>
+              <SectionTitle title="Mileage Settings" />
+              <View style={styles.mileageCard}>
+
+                {/* Card header */}
+                <View style={styles.mileageHeader}>
+                  <View style={styles.mileageHeaderLeft}>
+                    <View style={styles.mileageIconBg}>
+                      <Ionicons name="speedometer" size={16} color={Colors.accent} />
+                    </View>
+                    <Text style={styles.mileageCardTitle}>Odometer &amp; Service</Text>
+                  </View>
+                  <TouchableOpacity style={styles.editBtn} onPress={openMileageSheet}>
+                    <Ionicons name="create-outline" size={15} color={Colors.accent} />
+                    <Text style={styles.editBtnText}>Edit</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Odometer row */}
+                <View style={styles.mlRow}>
+                  <View style={[styles.mlIconBg, { backgroundColor: Colors.accent + '14' }]}>
+                    <Ionicons name="analytics-outline" size={16} color={Colors.accent} />
+                  </View>
+                  <Text style={styles.mlLabel}>Current Odometer</Text>
+                  <Text style={styles.mlValue}>{mileage.odometer.toLocaleString()} km</Text>
+                </View>
+                <View style={styles.mlDivider} />
+
+                {/* Next service row + progress bar */}
+                <View style={styles.mlRow}>
+                  <View style={[styles.mlIconBg, { backgroundColor: barColor + '14' }]}>
+                    <Ionicons name="construct-outline" size={16} color={barColor} />
+                  </View>
+                  <View style={styles.mlServiceBlock}>
+                    <View style={styles.mlServiceTop}>
+                      <Text style={styles.mlLabel}>Next Service</Text>
+                      {overdue ? (
+                        <View style={styles.overdueBadge}>
+                          <Text style={styles.overdueBadgeText}>OVERDUE</Text>
+                        </View>
+                      ) : (
+                        <Text style={[styles.mlValue, { color: barColor }]}>
+                          {kmToService > 0 ? `${kmToService.toLocaleString()} km left` : 'Due now'}
+                        </Text>
+                      )}
+                    </View>
+                    {/* Progress bar */}
+                    <View style={styles.serviceBarBg}>
+                      <View style={[styles.serviceBarFill, { width: `${Math.round(pct * 100)}%` as any, backgroundColor: barColor }]} />
+                    </View>
+                    <Text style={styles.serviceBarHint}>
+                      {overdue
+                        ? `${Math.abs(kmToService).toLocaleString()} km past service due`
+                        : `${nextServiceKm.toLocaleString()} km threshold  ·  ${mileage.serviceIntervalKm.toLocaleString()} km interval`}
+                    </Text>
+                  </View>
+                </View>
+                <View style={styles.mlDivider} />
+
+                {/* Daily limit row */}
+                <View style={styles.mlRow}>
+                  <View style={[styles.mlIconBg, { backgroundColor: Colors.info + '14' }]}>
+                    <Ionicons name="today-outline" size={16} color={Colors.info} />
+                  </View>
+                  <Text style={styles.mlLabel}>Daily Limit</Text>
+                  <Text style={styles.mlValue}>{mileage.dailyLimitKm.toLocaleString()} km/day</Text>
+                </View>
+                <View style={styles.mlDivider} />
+
+                {/* Monthly target row */}
+                <View style={styles.mlRow}>
+                  <View style={[styles.mlIconBg, { backgroundColor: '#8B5CF6' + '14' }]}>
+                    <Ionicons name="calendar-outline" size={16} color="#8B5CF6" />
+                  </View>
+                  <Text style={styles.mlLabel}>Monthly Target</Text>
+                  <Text style={styles.mlValue}>{mileage.monthlyTargetKm.toLocaleString()} km/mo</Text>
+                </View>
+
+              </View>
+
+              {/* ── Mileage edit sheet ──────────────────────── */}
+              <Modal
+                visible={showMileageSheet}
+                animationType="slide"
+                transparent
+                onRequestClose={() => setShowMileageSheet(false)}
+              >
+                <KeyboardAvoidingView
+                  style={styles.sheetOverlay}
+                  behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                >
+                  <TouchableOpacity style={styles.sheetBackdrop} activeOpacity={1} onPress={() => setShowMileageSheet(false)} />
+                  <View style={styles.sheet}>
+                    {/* Sheet header */}
+                    <View style={styles.sheetHeader}>
+                      <View style={styles.sheetHandle} />
+                      <Text style={styles.sheetTitle}>Mileage Settings</Text>
+                      <Text style={styles.sheetSub}>{vehicle.plate}  ·  {vehicle.make} {vehicle.model}</Text>
+                    </View>
+
+                    <ScrollView contentContainerStyle={styles.sheetBody} keyboardShouldPersistTaps="handled">
+
+                      <MileageField
+                        icon="analytics-outline" iconColor={Colors.accent}
+                        label="Current Odometer"
+                        hint="Adjust if tracker reading is off"
+                        unit="km"
+                        value={String(draft.odometer)}
+                        onChange={(v) => setDraft((d) => ({ ...d, odometer: v as any }))}
+                      />
+                      <MileageField
+                        icon="construct-outline" iconColor={Colors.warning}
+                        label="Service Interval"
+                        hint="Km between scheduled services"
+                        unit="km"
+                        value={String(draft.serviceIntervalKm)}
+                        onChange={(v) => setDraft((d) => ({ ...d, serviceIntervalKm: v as any }))}
+                      />
+                      <MileageField
+                        icon="checkmark-circle-outline" iconColor={Colors.statusActive}
+                        label="Last Service At"
+                        hint="Odometer reading at last service"
+                        unit="km"
+                        value={String(draft.lastServiceKm)}
+                        onChange={(v) => setDraft((d) => ({ ...d, lastServiceKm: v as any }))}
+                      />
+                      <MileageField
+                        icon="today-outline" iconColor={Colors.info}
+                        label="Daily Limit"
+                        hint="Alert when vehicle exceeds this per day"
+                        unit="km/day"
+                        value={String(draft.dailyLimitKm)}
+                        onChange={(v) => setDraft((d) => ({ ...d, dailyLimitKm: v as any }))}
+                      />
+                      <MileageField
+                        icon="calendar-outline" iconColor="#8B5CF6"
+                        label="Monthly Target"
+                        hint="Expected distance per month"
+                        unit="km/mo"
+                        value={String(draft.monthlyTargetKm)}
+                        onChange={(v) => setDraft((d) => ({ ...d, monthlyTargetKm: v as any }))}
+                      />
+
+                      <View style={styles.sheetActions}>
+                        <TouchableOpacity style={styles.sheetCancel} onPress={() => setShowMileageSheet(false)}>
+                          <Text style={styles.sheetCancelText}>Cancel</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.sheetSave} onPress={saveMileage}>
+                          <Ionicons name="checkmark" size={16} color="#FFF" />
+                          <Text style={styles.sheetSaveText}>Save Changes</Text>
+                        </TouchableOpacity>
+                      </View>
+
+                    </ScrollView>
+                  </View>
+                </KeyboardAvoidingView>
+              </Modal>
+            </>
+          );
+        })()}
 
         {/* Recent Trips */}
         <SectionTitle title="Recent Trips" />
@@ -316,6 +518,35 @@ function InfoRow({ icon, label, value, valueColor }: {
 
 function CardDivider() {
   return <View style={styles.cardDivider} />;
+}
+
+function MileageField({ icon, iconColor, label, hint, unit, value, onChange }: {
+  icon: any; iconColor: string; label: string; hint: string;
+  unit: string; value: string; onChange: (v: string) => void;
+}) {
+  return (
+    <View style={styles.mlField}>
+      <View style={styles.mlFieldTop}>
+        <View style={[styles.mlFieldIcon, { backgroundColor: iconColor + '14' }]}>
+          <Ionicons name={icon} size={15} color={iconColor} />
+        </View>
+        <View style={styles.mlFieldMeta}>
+          <Text style={styles.mlFieldLabel}>{label}</Text>
+          <Text style={styles.mlFieldHint}>{hint}</Text>
+        </View>
+        <Text style={styles.mlFieldUnit}>{unit}</Text>
+      </View>
+      <TextInput
+        style={styles.mlFieldInput}
+        value={value}
+        onChangeText={onChange}
+        keyboardType="numeric"
+        placeholder="0"
+        placeholderTextColor={Colors.textMuted}
+        selectTextOnFocus
+      />
+    </View>
+  );
 }
 
 // ── Styles ────────────────────────────────────────────────────────────────────
@@ -453,6 +684,85 @@ const styles = StyleSheet.create({
   fuelEventTitle: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary },
   fuelStation:    { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 1 },
   fuelMeta:       { fontSize: FontSize.xs, color: Colors.textMuted, marginTop: 1 },
+
+  // ── Mileage card ──────────────────────────────────────
+  mileageCard: {
+    backgroundColor: Colors.cardBackground, borderRadius: Radius.lg,
+    marginBottom: Spacing.sm, overflow: 'hidden', ...Shadow.sm,
+  },
+  mileageHeader: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    paddingHorizontal: Spacing.md, paddingVertical: 12,
+    borderBottomWidth: 1, borderBottomColor: Colors.divider,
+  },
+  mileageHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  mileageIconBg:     {
+    width: 28, height: 28, borderRadius: 8,
+    backgroundColor: Colors.accent + '14', alignItems: 'center', justifyContent: 'center',
+  },
+  mileageCardTitle: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
+  editBtn:          { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: Colors.accent + '12', borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 },
+  editBtnText:      { fontSize: 12, fontWeight: '700', color: Colors.accent },
+
+  mlRow:     { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.md, paddingVertical: 12, gap: 10 },
+  mlDivider: { height: 1, backgroundColor: Colors.divider, marginLeft: 52 },
+  mlIconBg:  { width: 30, height: 30, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  mlLabel:   { flex: 1, fontSize: FontSize.sm, color: Colors.textSecondary, fontWeight: '500' },
+  mlValue:   { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary },
+
+  // Service block (has progress bar)
+  mlServiceBlock: { flex: 1, gap: 5 },
+  mlServiceTop:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  serviceBarBg:   { height: 6, backgroundColor: Colors.border, borderRadius: 3, overflow: 'hidden' },
+  serviceBarFill: { height: '100%', borderRadius: 3 },
+  serviceBarHint: { fontSize: 10, color: Colors.textMuted },
+
+  overdueBadge:     { backgroundColor: Colors.danger + '18', borderRadius: 5, paddingHorizontal: 6, paddingVertical: 2 },
+  overdueBadgeText: { fontSize: 10, fontWeight: '800', color: Colors.danger, letterSpacing: 0.5 },
+
+  // ── Mileage edit sheet ──────────────────────────────
+  sheetOverlay:  { flex: 1, justifyContent: 'flex-end' },
+  sheetBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    backgroundColor: Colors.cardBackground,
+    borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl,
+    maxHeight: '85%',
+    ...Shadow.lg,
+  },
+  sheetHandle:  { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
+  sheetHeader:  { paddingHorizontal: Spacing.md, paddingBottom: 14, borderBottomWidth: 1, borderBottomColor: Colors.divider },
+  sheetTitle:   { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary, marginTop: 6 },
+  sheetSub:     { fontSize: FontSize.sm, color: Colors.textMuted, marginTop: 2 },
+  sheetBody:    { padding: Spacing.md, gap: 10 },
+
+  // Field inside sheet
+  mlField:      { backgroundColor: Colors.backgroundLight, borderRadius: Radius.md, overflow: 'hidden', borderWidth: 1, borderColor: Colors.border },
+  mlFieldTop:   { flexDirection: 'row', alignItems: 'center', gap: 10, padding: 10 },
+  mlFieldIcon:  { width: 28, height: 28, borderRadius: 7, alignItems: 'center', justifyContent: 'center' },
+  mlFieldMeta:  { flex: 1 },
+  mlFieldLabel: { fontSize: 13, fontWeight: '700', color: Colors.textPrimary },
+  mlFieldHint:  { fontSize: 10.5, color: Colors.textMuted, marginTop: 1 },
+  mlFieldUnit:  { fontSize: 11, fontWeight: '600', color: Colors.textMuted },
+  mlFieldInput: {
+    height: 44, borderTopWidth: 1, borderTopColor: Colors.border,
+    paddingHorizontal: 14, fontSize: 17, fontWeight: '700',
+    color: Colors.textPrimary, backgroundColor: '#FFF',
+  },
+
+  sheetActions: { flexDirection: 'row', gap: 10, marginTop: 6 },
+  sheetCancel:  {
+    flex: 1, height: 48, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.border,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sheetCancelText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textSecondary },
+  sheetSave: {
+    flex: 2, height: 48, borderRadius: Radius.md,
+    backgroundColor: Colors.accent, flexDirection: 'row',
+    alignItems: 'center', justifyContent: 'center', gap: 7,
+    ...Shadow.sm, shadowColor: Colors.accent,
+  },
+  sheetSaveText: { fontSize: FontSize.md, fontWeight: '800', color: '#FFF' },
 
   // Alerts
   alertRow: {
