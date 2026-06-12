@@ -1,0 +1,329 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Organization {
+  id          String    @id @default(cuid())
+  name        String
+  plan        OrgPlan   @default(basic)
+  status      OrgStatus @default(trial)
+  maxVehicles Int       @default(10)
+  maxUsers    Int       @default(5)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  users     User[]
+  vehicles  Vehicle[]
+  drivers   Driver[]
+  geofences Geofence[]
+
+  @@map("organizations")
+}
+
+model User {
+  id           String     @id @default(cuid())
+  name         String
+  email        String     @unique
+  passwordHash String
+  role         UserRole   @default(viewer)
+  status       UserStatus @default(pending)
+  phone        String?
+  avatar       String?
+  orgId        String
+  lastLogin    DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  org           Organization   @relation(fields: [orgId], references: [id])
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+model Driver {
+  id            String   @id @default(cuid())
+  name          String
+  phone         String
+  licenseNumber String
+  avatar        String?
+  orgId         String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org      Organization @relation(fields: [orgId], references: [id])
+  vehicles Vehicle[]
+  trips    Trip[]
+
+  @@map("drivers")
+}
+
+model Vehicle {
+  id        String        @id @default(cuid())
+  plate     String
+  make      String
+  model     String
+  year      Int
+  status    VehicleStatus @default(idle)
+  driverId  String?
+  orgId     String
+  odometer  Float         @default(0)
+  fuelLevel Float         @default(100)
+  speed     Float         @default(0)
+  engineOn  Boolean       @default(false)
+  group     String?
+  lat       Float?
+  lng       Float?
+  address   String?
+  lastSeen  DateTime?
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  org        Organization      @relation(fields: [orgId], references: [id])
+  driver     Driver?           @relation(fields: [driverId], references: [id])
+  trips      Trip[]
+  alerts     Alert[]
+  fuelEvents FuelEvent[]
+  accidents  AccidentReport[]
+  geofences  GeofenceVehicle[]
+  locations  VehicleLocation[]
+
+  @@map("vehicles")
+}
+
+model VehicleLocation {
+  id        String   @id @default(cuid())
+  vehicleId String
+  lat       Float
+  lng       Float
+  speed     Float    @default(0)
+  heading   Float?
+  timestamp DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, timestamp])
+  @@map("vehicle_locations")
+}
+
+model Trip {
+  id           String     @id @default(cuid())
+  vehicleId    String
+  driverId     String?
+  startTime    DateTime
+  endTime      DateTime?
+  startLat     Float
+  startLng     Float
+  startAddress String?
+  endLat       Float?
+  endLng       Float?
+  endAddress   String?
+  distance     Float      @default(0)
+  duration     Int        @default(0)
+  avgSpeed     Float      @default(0)
+  maxSpeed     Float      @default(0)
+  fuelConsumed Float      @default(0)
+  status       TripStatus @default(active)
+  orgId        String
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+  driver  Driver? @relation(fields: [driverId], references: [id])
+
+  @@index([orgId, startTime])
+  @@map("trips")
+}
+
+model Alert {
+  id        String        @id @default(cuid())
+  vehicleId String
+  type      AlertType
+  severity  AlertSeverity
+  message   String
+  read      Boolean       @default(false)
+  orgId     String
+  createdAt DateTime      @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@index([orgId, read])
+  @@index([vehicleId])
+  @@map("alerts")
+}
+
+model FuelEvent {
+  id           String        @id @default(cuid())
+  vehicleId    String
+  type         FuelEventType
+  liters       Float
+  costPerLiter Float?
+  totalCost    Float?
+  odometer     Float?
+  station      String?
+  orgId        String
+  timestamp    DateTime      @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@index([vehicleId, timestamp])
+  @@map("fuel_events")
+}
+
+model Geofence {
+  id           String        @id @default(cuid())
+  name         String
+  type         GeofenceType
+  shape        GeofenceShape
+  centerLat    Float?
+  centerLng    Float?
+  radius       Float?
+  coordinates  Json?
+  alertOnEnter Boolean       @default(false)
+  alertOnExit  Boolean       @default(true)
+  active       Boolean       @default(true)
+  orgId        String
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  org      Organization      @relation(fields: [orgId], references: [id])
+  vehicles GeofenceVehicle[]
+
+  @@map("geofences")
+}
+
+model GeofenceVehicle {
+  geofenceId String
+  vehicleId  String
+
+  geofence Geofence @relation(fields: [geofenceId], references: [id], onDelete: Cascade)
+  vehicle  Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@id([geofenceId, vehicleId])
+  @@map("geofence_vehicles")
+}
+
+model AccidentReport {
+  id                 String           @id @default(cuid())
+  vehicleId          String
+  severity           AccidentSeverity
+  status             AccidentStatus   @default(reported)
+  description        String
+  location           String?
+  lat                Float?
+  lng                Float?
+  injuries           Boolean          @default(false)
+  thirdPartyInvolved Boolean          @default(false)
+  thirdPartyInfo     String?
+  policeReport       String?
+  estimatedDamage    Float?
+  reportedBy         String
+  orgId              String
+  occurredAt         DateTime
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id])
+
+  @@index([orgId, occurredAt])
+  @@map("accident_reports")
+}
+
+enum OrgPlan {
+  basic
+  pro
+  enterprise
+}
+
+enum OrgStatus {
+  active
+  suspended
+  trial
+}
+
+enum UserRole {
+  admin
+  manager
+  viewer
+}
+
+enum UserStatus {
+  active
+  suspended
+  pending
+}
+
+enum VehicleStatus {
+  active
+  idle
+  offline
+  maintenance
+}
+
+enum TripStatus {
+  active
+  completed
+  cancelled
+}
+
+enum AlertType {
+  speeding
+  geofence_exit
+  geofence_enter
+  maintenance_due
+  low_fuel
+  engine_off
+  harsh_braking
+  idle_timeout
+}
+
+enum AlertSeverity {
+  critical
+  warning
+  info
+}
+
+enum FuelEventType {
+  refuel
+  consumption
+}
+
+enum GeofenceType {
+  allowed
+  restricted
+}
+
+enum GeofenceShape {
+  circle
+  polygon
+}
+
+enum AccidentSeverity {
+  minor
+  moderate
+  severe
+  fatal
+}
+
+enum AccidentStatus {
+  reported
+  under_investigation
+  resolved
+  closed
+}
