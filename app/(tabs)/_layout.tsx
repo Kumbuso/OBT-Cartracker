@@ -53,7 +53,7 @@ export default function TabLayout() {
           title: 'Dashboard',
           tabBarLabel: 'Dashboard',
           tabBarIcon: ({ focused }) => <TabIcon name="home" focused={focused} />,
-          headerTitle: 'OBT MobileTracker',
+          headerShown: false,
         }}
       />
       <Tabs.Screen

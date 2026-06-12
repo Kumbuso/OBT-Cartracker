@@ -1,53 +1,63 @@
 export const Colors = {
-  primary: '#0A2463',
+  // Brand navy — unchanged (it's the product identity)
+  primary:      '#0A2463',
   primaryLight: '#1B3A8A',
-  primaryDark: '#061540',
-  accent: '#3E92CC',
-  accentLight: '#5AABDF',
-  success: '#2DC653',
-  warning: '#F4A261',
-  danger: '#E63946',
-  info: '#457B9D',
+  primaryDark:  '#061540',
 
-  backgroundDark: '#0D1B2A',
-  backgroundMid: '#1B2838',
-  backgroundLight: '#F5F7FA',
-  cardBackground: '#FFFFFF',
+  // Accent — updated to more vibrant modern blue
+  accent:       '#2563EB',
+  accentLight:  '#3B82F6',
+
+  // Status
+  success:  '#10B981',  // emerald
+  warning:  '#F59E0B',  // amber
+  danger:   '#EF4444',  // red
+  info:     '#06B6D4',  // cyan
+
+  // Backgrounds
+  backgroundDark:     '#0D1B2A',
+  backgroundMid:      '#1B2838',
+  backgroundLight:    '#F8FAFC',  // slate-50
+  cardBackground:     '#FFFFFF',
   cardBackgroundDark: '#162032',
 
-  textPrimary: '#0D1B2A',
-  textSecondary: '#6B7280',
-  textLight: '#FFFFFF',
-  textMuted: '#9CA3AF',
+  // Text
+  textPrimary:   '#0D1B2A',
+  textSecondary: '#64748B',  // slate-500
+  textLight:     '#FFFFFF',
+  textMuted:     '#94A3B8',  // slate-400
 
-  border: '#E5E7EB',
+  // Borders
+  border:     '#E2E8F0',  // slate-200
   borderDark: '#2A3A4A',
-  divider: '#F3F4F6',
+  divider:    '#F1F5F9',  // slate-100
 
-  statusActive: '#2DC653',
-  statusIdle: '#F4A261',
-  statusOffline: '#9CA3AF',
-  statusMaintenance: '#E63946',
+  // Vehicle status
+  statusActive:      '#10B981',
+  statusIdle:        '#F59E0B',
+  statusOffline:     '#94A3B8',
+  statusMaintenance: '#EF4444',
 
-  tabBar: '#0A2463',
-  tabBarInactive: '#6B8AB8',
-  tabBarActive: '#FFFFFF',
+  // Tab bar
+  tabBar:         '#0A2463',
+  tabBarInactive: '#64748B',
+  tabBarActive:   '#FFFFFF',
 };
 
 export const Spacing = {
-  xs: 4,
-  sm: 8,
-  md: 16,
-  lg: 24,
-  xl: 32,
+  xs:  4,
+  sm:  8,
+  md:  16,
+  lg:  24,
+  xl:  32,
   xxl: 48,
 };
 
 export const Radius = {
-  sm: 6,
-  md: 12,
-  lg: 16,
-  xl: 24,
+  sm:   6,
+  md:   12,
+  lg:   16,
+  xl:   24,
   full: 9999,
 };
 
@@ -62,7 +72,7 @@ export const Shadow = {
   md: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.10,
     shadowRadius: 6,
     elevation: 4,
   },
@@ -76,11 +86,11 @@ export const Shadow = {
 };
 
 export const FontSize = {
-  xs: 11,
-  sm: 13,
-  md: 15,
-  lg: 17,
-  xl: 20,
-  xxl: 24,
+  xs:   11,
+  sm:   13,
+  md:   15,
+  lg:   17,
+  xl:   20,
+  xxl:  24,
   xxxl: 30,
 };
