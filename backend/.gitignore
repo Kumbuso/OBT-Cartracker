@@ -3,4 +3,5 @@ dist/
 .env
 *.log
 .pgtest/
+.pgmigrate/
 prisma/schema.prisma.bak
