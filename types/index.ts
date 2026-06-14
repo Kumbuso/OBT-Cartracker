@@ -15,6 +15,8 @@ export interface Vehicle {
   speed: number;
   engineOn: boolean;
   groupId: string;
+  imei?: string | null;
+  deviceSerial?: string | null;
 }
 
 export interface Driver {

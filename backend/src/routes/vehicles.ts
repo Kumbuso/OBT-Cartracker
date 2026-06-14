@@ -20,11 +20,13 @@ const createSchema = z.object({
   group: z.string().optional(),
   fuelLevel: z.number().min(0).max(100).optional(),
   odometer: z.number().min(0).optional(),
+  imei: z.string().min(15).max(17).optional().nullable(),
 });
 
 const updateSchema = createSchema.partial().extend({
   status: z.enum(['active', 'idle', 'offline', 'maintenance']).optional(),
   engineOn: z.boolean().optional(),
+  imei: z.string().min(15).max(17).optional().nullable(),
 });
 
 const locationSchema = z.object({
