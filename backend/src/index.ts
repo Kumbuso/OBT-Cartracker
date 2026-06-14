@@ -8,6 +8,7 @@ import { env } from './config/env';
 import { authRoutes, apiRoutes } from './routes';
 import { errorHandler } from './middleware/errorHandler';
 import { setupSocket } from './socket';
+import { startGateways } from './gateway';
 
 const app = express();
 const httpServer = createServer(app);
@@ -39,6 +40,8 @@ setupSocket(httpServer);
 httpServer.listen(env.PORT, () => {
   console.log(`Server running on http://localhost:${env.PORT}`);
   console.log(`Environment: ${env.NODE_ENV}`);
+  // Start hardware gateways after HTTP server is up and Socket.io is ready
+  startGateways();
 });
 
 export { httpServer };

@@ -10,6 +10,7 @@ import accidentRouter from './accidents';
 import organizationRouter from './organizations';
 import userRouter from './users';
 import reportRouter from './reports';
+import deviceRouter from './devices';
 
 export const authRoutes = authRouter;
 
@@ -24,5 +25,6 @@ api.use('/accidents', accidentRouter);
 api.use('/organizations', organizationRouter);
 api.use('/users', userRouter);
 api.use('/reports', reportRouter);
+api.use('/devices', deviceRouter);
 
 export const apiRoutes = api;

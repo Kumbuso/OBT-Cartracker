@@ -9,6 +9,11 @@ declare global {
         role: UserRole;
         email: string;
       };
+      /** Set by authenticateDevice middleware on /api/devices routes */
+      device?: {
+        id: string;
+        orgId: string;
+      };
     }
   }
 }

@@ -75,36 +75,53 @@ model Driver {
 }
 
 model Vehicle {
-  id        String        @id @default(cuid())
-  plate     String
-  make      String
-  model     String
-  year      Int
-  status    VehicleStatus @default(idle)
-  driverId  String?
-  orgId     String
-  odometer  Float         @default(0)
-  fuelLevel Float         @default(100)
-  speed     Float         @default(0)
-  engineOn  Boolean       @default(false)
-  group     String?
-  lat       Float?
-  lng       Float?
-  address   String?
-  lastSeen  DateTime?
-  createdAt DateTime      @default(now())
-  updatedAt DateTime      @updatedAt
+  id          String        @id @default(cuid())
+  plate       String
+  make        String
+  model       String
+  year        Int
+  status      VehicleStatus @default(idle)
+  driverId    String?
+  orgId       String
+  odometer    Float         @default(0)
+  fuelLevel   Float         @default(100)
+  speed       Float         @default(0)
+  engineOn    Boolean       @default(false)
+  group       String?
+  lat         Float?
+  lng         Float?
+  address     String?
+  lastSeen    DateTime?
+  imei        String?       @unique
+  deviceToken String?       @unique
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
-  org        Organization      @relation(fields: [orgId], references: [id])
-  driver     Driver?           @relation(fields: [driverId], references: [id])
-  trips      Trip[]
-  alerts     Alert[]
-  fuelEvents FuelEvent[]
-  accidents  AccidentReport[]
-  geofences  GeofenceVehicle[]
-  locations  VehicleLocation[]
+  org            Organization      @relation(fields: [orgId], references: [id])
+  driver         Driver?           @relation(fields: [driverId], references: [id])
+  trips          Trip[]
+  alerts         Alert[]
+  fuelEvents     FuelEvent[]
+  accidents      AccidentReport[]
+  geofences      GeofenceVehicle[]
+  locations      VehicleLocation[]
+  sensorReadings SensorReading[]
 
   @@map("vehicles")
+}
+
+model SensorReading {
+  id        String   @id @default(cuid())
+  vehicleId String
+  type      String
+  value     Float
+  unit      String?
+  timestamp DateTime @default(now())
+
+  vehicle Vehicle @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+
+  @@index([vehicleId, type, timestamp])
+  @@map("sensor_readings")
 }
 
 model VehicleLocation {
@@ -290,7 +307,11 @@ enum AlertType {
   low_fuel
   engine_off
   harsh_braking
+  harsh_acceleration
   idle_timeout
+  sos
+  power_cut
+  tampering
 }
 
 enum AlertSeverity {
