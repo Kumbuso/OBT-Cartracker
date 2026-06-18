@@ -12,6 +12,24 @@ export interface AuthUser {
   initials: string;
 }
 
+const DEMO_ACCOUNTS: Record<string, AuthUser & { password: string }> = {
+  'admin@obt.zm': {
+    id: 'demo-admin', name: 'Admin User', email: 'admin@obt.zm',
+    role: 'admin', company: 'OBT Logistics Zambia', orgId: 'demo-org',
+    initials: 'AU', password: 'obt2026',
+  },
+  'manager@obt.zm': {
+    id: 'demo-manager', name: 'Fleet Manager', email: 'manager@obt.zm',
+    role: 'manager', company: 'OBT Logistics Zambia', orgId: 'demo-org',
+    initials: 'FM', password: 'obt2026',
+  },
+  'viewer@obt.zm': {
+    id: 'demo-viewer', name: 'View Only', email: 'viewer@obt.zm',
+    role: 'viewer', company: 'OBT Logistics Zambia', orgId: 'demo-org',
+    initials: 'VO', password: 'obt2026',
+  },
+};
+
 interface AuthContextType {
   user: AuthUser | null;
   loading: boolean;
@@ -30,7 +48,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser]       = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Restore persisted user on mount
   useEffect(() => {
     (async () => {
       try {
@@ -45,6 +62,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     email: string,
     password: string,
   ): Promise<{ success: boolean; error?: string }> => {
+    // Demo accounts bypass the API so the web app works without a live backend
+    const demo = DEMO_ACCOUNTS[email.toLowerCase()];
+    if (demo) {
+      if (demo.password !== password) {
+        return { success: false, error: 'Invalid email or password. Please try again.' };
+      }
+      const { password: _pw, ...authUser } = demo;
+      setUser(authUser);
+      await AsyncStorage.setItem(USER_KEY, JSON.stringify(authUser));
+      return { success: true };
+    }
+
     try {
       const data = await apiLogin(email, password);
       const authUser: AuthUser = {
