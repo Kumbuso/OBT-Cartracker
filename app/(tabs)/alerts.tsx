@@ -62,6 +62,7 @@ export default function AlertsScreen() {
       </View>
 
       <FlatList
+        style={{ flex: 1 }}
         data={sorted}
         keyExtractor={(a) => a.id}
         contentContainerStyle={styles.list}

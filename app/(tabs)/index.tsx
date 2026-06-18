@@ -1,45 +1,41 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
-  ScrollView,
+  FlatList,
   TouchableOpacity,
-  StatusBar,
-  RefreshControl,
   Animated,
+  Platform,
+  StatusBar,
+  Linking,
+  Modal,
+  Switch,
+  ScrollView,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import * as Location from 'expo-location';
 import { useAuth } from '../../context/AuthContext';
-import { mockFleetStats, mockVehicles, mockAlerts } from '../../data/mockData';
-import { Colors, Spacing, Radius, FontSize, Shadow } from '../../constants/theme';
+import { mockVehicles } from '../../data/mockData';
+import { Colors, Radius, Shadow, FontSize, Spacing } from '../../constants/theme';
 import type { Vehicle } from '../../types';
+import FleetMap from '../../components/FleetMap';
+import type { MapStyle } from '../../components/FleetMap';
 
-// ─────────────────────────────────────────────────────────────────────────────
-
-function greet() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 17) return 'Good afternoon';
-  return 'Good evening';
+interface MapSettings {
+  style:       MapStyle;
+  showLabels:  boolean;
+  showPlate:   boolean;
+  showTraffic: boolean;
 }
 
-function formatDate() {
-  return new Date().toLocaleDateString('en-US', {
-    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
-  });
-}
-
-function timeAgo(iso: string): string {
-  const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
-  if (mins < 1) return 'Just now';
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
+const MAP_STYLES: { key: MapStyle; label: string; icon: string; desc: string }[] = [
+  { key: 'standard',  label: 'Street',    icon: 'map-outline',       desc: 'Default road map' },
+  { key: 'satellite', label: 'Satellite', icon: 'globe-outline',     desc: 'Aerial imagery' },
+  { key: 'hybrid',    label: 'Hybrid',    icon: 'layers-outline',    desc: 'Imagery + labels' },
+];
 
 const STATUS_COLOR: Record<string, string> = {
   active:      Colors.statusActive,
@@ -48,438 +44,432 @@ const STATUS_COLOR: Record<string, string> = {
   maintenance: Colors.statusMaintenance,
 };
 
-const ALERT_META: Record<string, { icon: string; color: string; bg: string }> = {
-  critical: { icon: 'alert-circle',       color: Colors.danger,  bg: '#FEF2F2' },
-  warning:  { icon: 'warning',            color: Colors.warning, bg: '#FFFBEB' },
-  info:     { icon: 'information-circle', color: Colors.accent,  bg: '#EFF6FF' },
-};
+const LEGEND_ITEMS = [
+  { label: 'Active',      color: Colors.statusActive,      desc: 'Engine on, moving'   },
+  { label: 'Idle',        color: Colors.statusIdle,        desc: 'Engine on, stationary'},
+  { label: 'Offline',     color: Colors.statusOffline,     desc: 'No GPS signal'        },
+  { label: 'Maintenance', color: Colors.statusMaintenance, desc: 'Out of service'       },
+];
 
-// ─── Fleet Status Bar ─────────────────────────────────────────────────────────
-
-function FleetStatusBar({ vehicles }: { vehicles: Vehicle[] }) {
-  const counts: Record<string, number> = {
-    active:      vehicles.filter((v) => v.status === 'active').length,
-    idle:        vehicles.filter((v) => v.status === 'idle').length,
-    maintenance: vehicles.filter((v) => v.status === 'maintenance').length,
-    offline:     vehicles.filter((v) => v.status === 'offline').length,
-  };
-  const segments = Object.entries(counts).filter(([, n]) => n > 0);
-
-  return (
-    <View style={styles.barWrap}>
-      <View style={styles.bar}>
-        {segments.map(([key, count], i) => (
-          <View
-            key={key}
-            style={[
-              styles.barSeg,
-              { flex: count, backgroundColor: STATUS_COLOR[key] },
-              i === 0 && { borderTopLeftRadius: 5, borderBottomLeftRadius: 5 },
-              i === segments.length - 1 && { borderTopRightRadius: 5, borderBottomRightRadius: 5 },
-            ]}
-          />
-        ))}
-      </View>
-      <View style={styles.barLegend}>
-        {segments.map(([key, count]) => (
-          <View key={key} style={styles.legendItem}>
-            <View style={[styles.legendDot, { backgroundColor: STATUS_COLOR[key] }]} />
-            <Text style={styles.legendLabel}>
-              {count} {key.charAt(0).toUpperCase() + key.slice(1)}
-            </Text>
-          </View>
-        ))}
-      </View>
-    </View>
-  );
+function greet() {
+  const h = new Date().getHours();
+  if (h < 12) return 'Good morning';
+  if (h < 17) return 'Good afternoon';
+  return 'Good evening';
 }
-
-// ─── Stat Chip ────────────────────────────────────────────────────────────────
-
-function StatChip({ value, label, color }: { value: number; label: string; color?: string }) {
-  return (
-    <View style={styles.statChip}>
-      <Text style={[styles.statValue, color ? { color } : undefined]}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
-    </View>
-  );
-}
-
-// ─── Metric Pill ──────────────────────────────────────────────────────────────
-
-function MetricPill({
-  icon, value, label, color,
-}: { icon: string; value: string | number; label: string; color: string }) {
-  return (
-    <View style={styles.metricPill}>
-      <View style={[styles.metricIconBg, { backgroundColor: color + '1A' }]}>
-        <Ionicons name={icon as any} size={20} color={color} />
-      </View>
-      <Text style={[styles.metricValue, { color }]}>{value}</Text>
-      <Text style={styles.metricLabel}>{label}</Text>
-    </View>
-  );
-}
-
-// ─── Vehicle Row ──────────────────────────────────────────────────────────────
-
-function VehicleRow({ vehicle, onPress }: { vehicle: Vehicle; onPress: () => void }) {
-  const isMoving = vehicle.status === 'active' && vehicle.speed > 0;
-  const dotColor = STATUS_COLOR[vehicle.status] ?? Colors.statusOffline;
-
-  return (
-    <TouchableOpacity style={styles.vehicleRow} onPress={onPress} activeOpacity={0.7}>
-      <View style={[styles.vDot, { backgroundColor: dotColor }]} />
-      <View style={styles.vInfo}>
-        <Text style={styles.vPlate}>{vehicle.plate}</Text>
-        <Text style={styles.vSub} numberOfLines={1}>
-          {vehicle.make} {vehicle.model}
-          {vehicle.driver ? `  ·  ${vehicle.driver.name}` : ''}
-        </Text>
-      </View>
-      {isMoving ? (
-        <View style={[styles.movingBadge, { backgroundColor: Colors.statusActive + '18' }]}>
-          <Text style={[styles.movingBadgeText, { color: Colors.statusActive }]}>
-            {vehicle.speed} km/h
-          </Text>
-        </View>
-      ) : (
-        <View style={[styles.statusBadge, { backgroundColor: dotColor + '18' }]}>
-          <Text style={[styles.statusBadgeText, { color: dotColor }]}>
-            {vehicle.status.charAt(0).toUpperCase() + vehicle.status.slice(1)}
-          </Text>
-        </View>
-      )}
-    </TouchableOpacity>
-  );
-}
-
-// ─── Alert Row ────────────────────────────────────────────────────────────────
-
-function AlertRow({ alert }: { alert: any }) {
-  const meta = ALERT_META[alert.severity] ?? ALERT_META.info;
-  return (
-    <View style={styles.alertRow}>
-      <View style={[styles.alertIconWrap, { backgroundColor: meta.bg }]}>
-        <Ionicons name={meta.icon as any} size={18} color={meta.color} />
-      </View>
-      <View style={styles.alertInfo}>
-        <Text style={styles.alertMsg} numberOfLines={2}>{alert.message}</Text>
-        <Text style={styles.alertMeta}>
-          {alert.vehiclePlate}{'  ·  '}{timeAgo(alert.timestamp)}
-        </Text>
-      </View>
-      {!alert.read && <View style={[styles.unreadPip, { backgroundColor: meta.color }]} />}
-    </View>
-  );
-}
-
-// ─── Section Header ───────────────────────────────────────────────────────────
-
-function SectionHead({
-  title, badge, onSeeAll,
-}: { title: string; badge?: number; onSeeAll?: () => void }) {
-  return (
-    <View style={styles.sectionHead}>
-      <View style={styles.sectionHeadLeft}>
-        <Text style={styles.sectionTitle}>{title}</Text>
-        {badge != null && badge > 0 && (
-          <View style={styles.sectionBadge}>
-            <Text style={styles.sectionBadgeText}>{badge}</Text>
-          </View>
-        )}
-      </View>
-      {onSeeAll && (
-        <TouchableOpacity onPress={onSeeAll} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-          <Text style={styles.seeAll}>See all</Text>
-        </TouchableOpacity>
-      )}
-    </View>
-  );
-}
-
-// ─── Dashboard ────────────────────────────────────────────────────────────────
 
 export default function DashboardScreen() {
-  const { user }  = useAuth();
-  const router    = useRouter();
-  const [refreshing, setRefreshing] = React.useState(false);
+  const { user } = useAuth();
+  const router   = useRouter();
+  const mapRef   = useRef<any>(null);
 
-  // Pulsing live indicator
+  const [selected,        setSelected]        = useState<Vehicle | null>(null);
+  const [locationGranted, setLocationGranted] = useState(false);
+  const [showSettings,    setShowSettings]    = useState(false);
+  const [legendOpen,      setLegendOpen]      = useState(true);
+  const [mapSettings,     setMapSettings]     = useState<MapSettings>({
+    style: 'standard', showLabels: true, showPlate: false, showTraffic: false,
+  });
+
   const pulse = useRef(new Animated.Value(1)).current;
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulse, { toValue: 1.7, duration: 750, useNativeDriver: true }),
-        Animated.timing(pulse, { toValue: 1,   duration: 750, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 1.8, duration: 800, useNativeDriver: false }),
+        Animated.timing(pulse, { toValue: 1,   duration: 800, useNativeDriver: false }),
       ])
     ).start();
   }, []);
 
-  const vehicles        = mockVehicles;
-  const unreadAlerts    = mockAlerts.filter((a) => !a.read);
-  const recentAlerts    = unreadAlerts.slice(0, 3);
-  const displayVehicles = vehicles
-    .filter((v) => v.status === 'active' || v.status === 'idle')
-    .slice(0, 4);
-
-  const counts = {
-    total:       vehicles.length,
-    active:      vehicles.filter((v) => v.status === 'active').length,
-    idle:        vehicles.filter((v) => v.status === 'idle').length,
-    maintenance: vehicles.filter((v) => v.status === 'maintenance').length,
-  };
-
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await new Promise((r) => setTimeout(r, 900));
-    setRefreshing(false);
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+    Location.requestForegroundPermissionsAsync().then(({ status }) => {
+      if (status === 'granted') setLocationGranted(true);
+    });
   }, []);
 
-  const firstName = user?.name?.split(' ')[0] ?? 'there';
+  const focusVehicle = useCallback((v: Vehicle) => {
+    const next = selected?.id === v.id ? null : v;
+    setSelected(next);
+    if (next && mapRef.current && Platform.OS !== 'web') {
+      mapRef.current.animateToRegion(
+        { latitude: v.location.latitude, longitude: v.location.longitude, latitudeDelta: 0.04, longitudeDelta: 0.04 },
+        500,
+      );
+    }
+  }, [selected]);
+
+  const callDriver = async (v: Vehicle) => {
+    if (!v.driver?.phone) return;
+    const url = `tel:${v.driver.phone.replace(/\s/g, '')}`;
+    if (await Linking.canOpenURL(url)) Linking.openURL(url);
+  };
+
+  const vehicles = mockVehicles;
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="light-content" backgroundColor={Colors.primary} />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      {/* ── Custom Header ────────────────────────────────── */}
-      <SafeAreaView style={styles.headerBg} edges={['top']}>
-        <View style={styles.header}>
-          <View>
-            <Text style={styles.greetText}>{greet()}, {firstName}</Text>
-            <Text style={styles.dateText}>{formatDate()}</Text>
-          </View>
-          <View style={styles.headerRight}>
-            {unreadAlerts.length > 0 && (
-              <TouchableOpacity
-                style={styles.bellWrap}
-                onPress={() => router.push('/(tabs)/alerts')}
-              >
-                <Ionicons name="notifications-outline" size={22} color={Colors.textLight} />
-                <View style={styles.bellBadge}>
-                  <Text style={styles.bellBadgeText}>
-                    {unreadAlerts.length > 9 ? '9+' : unreadAlerts.length}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            )}
+      {/* Full-screen map */}
+      <FleetMap
+        vehicles={vehicles}
+        selected={selected}
+        onSelect={setSelected}
+        onOpenVehicle={(v) => router.push(`/vehicle/${v.id}` as any)}
+        showUserLocation={locationGranted}
+        mapRef={mapRef}
+        mapStyle={mapSettings.style}
+        showLabels={mapSettings.showLabels}
+        showPlate={mapSettings.showPlate}
+        showTraffic={mapSettings.showTraffic}
+      />
+
+      {/* Top greeting + LIVE pill */}
+      <SafeAreaView style={styles.topOverlay} edges={['top']}>
+        <View style={styles.greetingCard}>
+          <Text style={styles.greetingText}>
+            {greet()}, {user?.name?.split(' ')[0] ?? 'there'}
+          </Text>
+          <View style={styles.topRight}>
             <View style={styles.livePill}>
               <Animated.View style={[styles.liveDot, { transform: [{ scale: pulse }] }]} />
               <Text style={styles.liveText}>LIVE</Text>
             </View>
+            <TouchableOpacity style={styles.settingsBtn} onPress={() => setShowSettings(true)}>
+              <Ionicons name="settings-outline" size={18} color={Colors.textSecondary} />
+            </TouchableOpacity>
           </View>
         </View>
       </SafeAreaView>
 
-      {/* ── Scrollable Body ──────────────────────────────── */}
-      <ScrollView
-        contentContainerStyle={styles.content}
-        showsVerticalScrollIndicator={false}
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={onRefresh}
-            tintColor={Colors.accent}
-            colors={[Colors.accent]}
-          />
-        }
+      {/* Map settings sheet */}
+      <Modal
+        visible={showSettings}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setShowSettings(false)}
       >
-        {/* Fleet Overview card */}
-        <View style={styles.card}>
-          <SectionHead
-            title="Fleet Overview"
-            onSeeAll={() => router.push('/(tabs)/vehicles')}
-          />
-          <View style={styles.statsRow}>
-            <StatChip value={counts.total}       label="Total" />
-            <View style={styles.statDivider} />
-            <StatChip value={counts.active}      label="Active"  color={Colors.statusActive} />
-            <View style={styles.statDivider} />
-            <StatChip value={counts.idle}        label="Idle"    color={Colors.statusIdle} />
-            <View style={styles.statDivider} />
-            <StatChip value={counts.maintenance} label="Maint."  color={Colors.statusMaintenance} />
+        <TouchableOpacity
+          style={styles.modalBackdrop}
+          activeOpacity={1}
+          onPress={() => setShowSettings(false)}
+        />
+        <View style={styles.settingsSheet}>
+          <View style={styles.sheetHandle} />
+          <View style={styles.sheetHeader}>
+            <View style={styles.sheetTitleRow}>
+              <Ionicons name="map" size={20} color={Colors.primary} />
+              <Text style={styles.sheetTitle}>Map Settings</Text>
+            </View>
+            <TouchableOpacity onPress={() => setShowSettings(false)}>
+              <Ionicons name="close" size={22} color={Colors.textSecondary} />
+            </TouchableOpacity>
           </View>
-          <FleetStatusBar vehicles={vehicles} />
-        </View>
 
-        {/* Today at a Glance */}
-        <View style={styles.metricsRow}>
-          <MetricPill
-            icon="navigate"
-            value={mockFleetStats.totalTripsToday}
-            label="Trips"
-            color={Colors.accent}
-          />
-          <MetricPill
-            icon="speedometer"
-            value={`${Math.round(mockFleetStats.totalDistanceToday)} km`}
-            label="Distance"
-            color="#8B5CF6"
-          />
-          <MetricPill
-            icon="alert-circle"
-            value={unreadAlerts.length}
-            label="Alerts"
-            color={unreadAlerts.length > 0 ? Colors.danger : Colors.statusOffline}
-          />
-        </View>
+          {/* Map style */}
+          <Text style={styles.settingsSectionLabel}>MAP STYLE</Text>
+          <View style={styles.styleGrid}>
+            {MAP_STYLES.map((opt) => {
+              const active = mapSettings.style === opt.key;
+              return (
+                <TouchableOpacity
+                  key={opt.key}
+                  style={[styles.styleCard, active && styles.styleCardActive]}
+                  onPress={() => setMapSettings((s) => ({ ...s, style: opt.key }))}
+                  activeOpacity={0.8}
+                >
+                  <View style={[styles.styleIconWrap, { backgroundColor: active ? Colors.primary : Colors.backgroundLight }]}>
+                    <Ionicons name={opt.icon as any} size={20} color={active ? '#FFF' : Colors.textSecondary} />
+                  </View>
+                  <Text style={[styles.styleLabel, active && styles.styleLabelActive]}>{opt.label}</Text>
+                  <Text style={styles.styleDesc}>{opt.desc}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {/* Active Vehicles */}
-        <View style={styles.card}>
-          <SectionHead
-            title="Active Vehicles"
-            badge={counts.active}
-            onSeeAll={() => router.push('/(tabs)/vehicles')}
-          />
-          {displayVehicles.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="car-outline" size={32} color={Colors.textMuted} />
-              <Text style={styles.emptyText}>No vehicles active right now</Text>
+          {/* Overlays */}
+          <Text style={styles.settingsSectionLabel}>OVERLAYS</Text>
+          <View style={styles.togglesCard}>
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleLeft}>
+                <View style={[styles.toggleIcon, { backgroundColor: Colors.accent + '14' }]}>
+                  <Ionicons name="person-outline" size={15} color={Colors.accent} />
+                </View>
+                <View>
+                  <Text style={styles.toggleLabel}>Driver Labels</Text>
+                  <Text style={styles.toggleDesc}>Show driver names on map pins</Text>
+                </View>
+              </View>
+              <Switch
+                value={mapSettings.showLabels}
+                onValueChange={(v) => setMapSettings((s) => ({ ...s, showLabels: v }))}
+                trackColor={{ false: Colors.border, true: Colors.primary + '60' }}
+                thumbColor={mapSettings.showLabels ? Colors.primary : Colors.textMuted}
+              />
             </View>
-          ) : (
-            displayVehicles.map((v, i) => (
-              <React.Fragment key={v.id}>
-                {i > 0 && <View style={styles.rowDivider} />}
-                <VehicleRow
-                  vehicle={v}
-                  onPress={() => router.push(`/vehicle/${v.id}` as any)}
-                />
-              </React.Fragment>
-            ))
+            <View style={styles.toggleDivider} />
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleLeft}>
+                <View style={[styles.toggleIcon, { backgroundColor: '#8B5CF6' + '14' }]}>
+                  <Ionicons name="card-outline" size={15} color="#8B5CF6" />
+                </View>
+                <View>
+                  <Text style={styles.toggleLabel}>Show Plate Number</Text>
+                  <Text style={styles.toggleDesc}>Display registration plate on map tags</Text>
+                </View>
+              </View>
+              <Switch
+                value={mapSettings.showPlate}
+                onValueChange={(v) => setMapSettings((s) => ({ ...s, showPlate: v }))}
+                trackColor={{ false: Colors.border, true: '#8B5CF6' + '60' }}
+                thumbColor={mapSettings.showPlate ? '#8B5CF6' : Colors.textMuted}
+              />
+            </View>
+            <View style={styles.toggleDivider} />
+            <View style={styles.toggleRow}>
+              <View style={styles.toggleLeft}>
+                <View style={[styles.toggleIcon, { backgroundColor: Colors.danger + '14' }]}>
+                  <Ionicons name="car-outline" size={15} color={Colors.danger} />
+                </View>
+                <View>
+                  <Text style={styles.toggleLabel}>Traffic Layer</Text>
+                  <Text style={styles.toggleDesc}>Live traffic overlay {Platform.OS === 'web' ? '(mobile only)' : ''}</Text>
+                </View>
+              </View>
+              <Switch
+                value={mapSettings.showTraffic}
+                onValueChange={(v) => setMapSettings((s) => ({ ...s, showTraffic: v }))}
+                disabled={Platform.OS === 'web'}
+                trackColor={{ false: Colors.border, true: Colors.danger + '60' }}
+                thumbColor={mapSettings.showTraffic ? Colors.danger : Colors.textMuted}
+              />
+            </View>
+          </View>
+
+          <View style={{ height: Spacing.xl }} />
+        </View>
+      </Modal>
+
+      {/* My-location FAB */}
+      {locationGranted && (
+        <TouchableOpacity
+          style={[styles.locFab, { bottom: selected ? 170 : 76 }]}
+          onPress={async () => {
+            const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+            mapRef.current?.animateToRegion(
+              { latitude: loc.coords.latitude, longitude: loc.coords.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 },
+              600,
+            );
+          }}
+        >
+          <Ionicons name="locate" size={22} color={Colors.primary} />
+        </TouchableOpacity>
+      )}
+
+      {/* Selected vehicle card */}
+      {selected && (
+        <View style={styles.selectedCard}>
+          <TouchableOpacity
+            style={styles.selectedMain}
+            onPress={() => router.push(`/vehicle/${selected.id}` as any)}
+            activeOpacity={0.85}
+          >
+            <View style={[styles.selectedAccent, { backgroundColor: STATUS_COLOR[selected.status] }]} />
+            <View style={styles.selectedInfo}>
+              <Text style={styles.selectedPlate}>{selected.plate}</Text>
+              <Text style={styles.selectedModel}>{selected.year} {selected.make} {selected.model}</Text>
+              {selected.location.address && (
+                <Text style={styles.selectedAddr} numberOfLines={1}>{selected.location.address}</Text>
+              )}
+            </View>
+            <View style={styles.selectedRight}>
+              {selected.speed > 0 && (
+                <View style={[styles.speedBadge, { backgroundColor: Colors.statusActive + '1A' }]}>
+                  <Text style={[styles.speedText, { color: Colors.statusActive }]}>{selected.speed} km/h</Text>
+                </View>
+              )}
+              <Ionicons name="chevron-forward" size={15} color={Colors.textMuted} />
+            </View>
+          </TouchableOpacity>
+          {selected.driver && (
+            <TouchableOpacity style={styles.callBtn} onPress={() => callDriver(selected)}>
+              <Ionicons name="call" size={14} color="#FFF" />
+              <Text style={styles.callBtnText}>Call {selected.driver.name.split(' ')[0]}</Text>
+            </TouchableOpacity>
           )}
         </View>
+      )}
 
-        {/* Recent Alerts */}
-        <View style={styles.card}>
-          <SectionHead
-            title="Recent Alerts"
-            badge={unreadAlerts.length}
-            onSeeAll={() => router.push('/(tabs)/alerts')}
-          />
-          {recentAlerts.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Ionicons name="checkmark-circle-outline" size={32} color={Colors.statusActive} />
-              <Text style={styles.emptyText}>All clear — no unread alerts</Text>
+      {/* Map legend */}
+      {legendOpen ? (
+        <View style={styles.legend}>
+          <View style={styles.legendHeader}>
+            <Ionicons name="information-circle" size={13} color={Colors.primary} />
+            <Text style={styles.legendTitle}>Map Legend</Text>
+            <TouchableOpacity onPress={() => setLegendOpen(false)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+              <Ionicons name="chevron-back" size={14} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </View>
+          <View style={styles.legendDivider} />
+          {LEGEND_ITEMS.map((item) => (
+            <View key={item.label} style={styles.legendRow}>
+              <View style={[styles.legendDot, { backgroundColor: item.color }]} />
+              <View style={styles.legendText}>
+                <Text style={styles.legendLabel}>{item.label}</Text>
+                <Text style={styles.legendDesc}>{item.desc}</Text>
+              </View>
             </View>
-          ) : (
-            recentAlerts.map((a, i) => (
-              <React.Fragment key={a.id}>
-                {i > 0 && <View style={styles.rowDivider} />}
-                <AlertRow alert={a} />
-              </React.Fragment>
-            ))
-          )}
+          ))}
         </View>
+      ) : (
+        <TouchableOpacity style={styles.legendTab} onPress={() => setLegendOpen(true)}>
+          <Ionicons name="information-circle-outline" size={16} color={Colors.primary} />
+          <Text style={styles.legendTabText}>Legend</Text>
+        </TouchableOpacity>
+      )}
 
-        <View style={{ height: Spacing.xl }} />
-      </ScrollView>
+      {/* Bottom vehicle chip strip */}
+      <SafeAreaView style={styles.chipStrip} edges={['bottom']}>
+        <FlatList
+          data={vehicles}
+          keyExtractor={(v) => v.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.chipList}
+          renderItem={({ item }) => (
+            <TouchableOpacity
+              style={[styles.chip, selected?.id === item.id && styles.chipActive]}
+              onPress={() => focusVehicle(item)}
+            >
+              <View style={[styles.chipDot, { backgroundColor: STATUS_COLOR[item.status] }]} />
+              <Text style={[styles.chipText, selected?.id === item.id && styles.chipTextActive]}>
+                {item.plate}
+              </Text>
+            </TouchableOpacity>
+          )}
+        />
+      </SafeAreaView>
     </View>
   );
 }
 
-// ─── Styles ───────────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: Colors.backgroundLight },
+  root: { flex: 1 },
 
-  // Header
-  headerBg: { backgroundColor: Colors.primary },
-  header: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+  topOverlay: { position: 'absolute', top: 0, left: 0, right: 0, paddingHorizontal: 14, paddingTop: 6, zIndex: 1000 },
+  greetingCard: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+    backgroundColor: 'rgba(255,255,255,0.92)', borderRadius: Radius.lg,
+    paddingHorizontal: 14, paddingVertical: 10,
+    ...Shadow.md,
   },
-  greetText:   { fontSize: 19, fontWeight: '800', color: Colors.textLight },
-  dateText:    { fontSize: 11.5, color: 'rgba(255,255,255,0.45)', marginTop: 2 },
-  headerRight: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  greetingText: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary, flex: 1, marginRight: 8 },
+  topRight:     { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  livePill:     { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: Colors.primary + '12', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
+  liveDot:      { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.statusActive },
+  liveText:     { fontSize: 10, fontWeight: '800', color: Colors.primary, letterSpacing: 0.8 },
+  settingsBtn:  { width: 32, height: 32, borderRadius: 16, backgroundColor: Colors.backgroundLight, borderWidth: 1, borderColor: Colors.border, alignItems: 'center', justifyContent: 'center' },
 
-  bellWrap:      { position: 'relative', padding: 4 },
-  bellBadge:     {
-    position: 'absolute', top: 0, right: 0,
-    width: 16, height: 16, borderRadius: 8,
-    backgroundColor: Colors.danger,
-    alignItems: 'center', justifyContent: 'center',
+  // Settings modal
+  modalBackdrop: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.4)' },
+  settingsSheet: {
+    position: 'absolute', bottom: 0, left: 0, right: 0,
+    backgroundColor: Colors.cardBackground,
+    borderTopLeftRadius: Radius.xl, borderTopRightRadius: Radius.xl,
+    paddingHorizontal: Spacing.md, paddingBottom: Spacing.md,
+    ...Shadow.lg,
   },
-  bellBadgeText: { fontSize: 8, fontWeight: '800', color: '#FFF' },
+  sheetHandle:   { width: 36, height: 4, borderRadius: 2, backgroundColor: Colors.border, alignSelf: 'center', marginTop: 10, marginBottom: 4 },
+  sheetHeader:   { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: Spacing.sm },
+  sheetTitleRow: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  sheetTitle:    { fontSize: FontSize.lg, fontWeight: '800', color: Colors.textPrimary },
 
-  livePill: {
-    flexDirection: 'row', alignItems: 'center', gap: 6,
-    backgroundColor: 'rgba(255,255,255,0.12)',
-    borderRadius: 20, paddingHorizontal: 11, paddingVertical: 6,
+  settingsSectionLabel: { fontSize: 10.5, fontWeight: '800', color: Colors.textMuted, letterSpacing: 0.8, marginTop: Spacing.md, marginBottom: Spacing.sm },
+
+  // Style grid
+  styleGrid:      { flexDirection: 'row', gap: 10 },
+  styleCard: {
+    flex: 1, alignItems: 'center', gap: 6, padding: 12,
+    backgroundColor: Colors.backgroundLight, borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.border,
   },
-  liveDot:  { width: 7, height: 7, borderRadius: 3.5, backgroundColor: Colors.statusActive },
-  liveText: { fontSize: 9.5, fontWeight: '800', color: Colors.textLight, letterSpacing: 1 },
+  styleCardActive:  { borderColor: Colors.primary, backgroundColor: Colors.primary + '08' },
+  styleIconWrap:    { width: 44, height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
+  styleLabel:       { fontSize: 12, fontWeight: '700', color: Colors.textSecondary },
+  styleLabelActive: { color: Colors.primary },
+  styleDesc:        { fontSize: 10, color: Colors.textMuted, textAlign: 'center' },
 
-  // Content
-  content: { padding: 14, gap: 12 },
+  // Toggle rows
+  togglesCard:  { backgroundColor: Colors.backgroundLight, borderRadius: Radius.md, borderWidth: 1, borderColor: Colors.border, overflow: 'hidden' },
+  toggleRow:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', padding: Spacing.md },
+  toggleLeft:   { flexDirection: 'row', alignItems: 'center', gap: 12, flex: 1 },
+  toggleIcon:   { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
+  toggleLabel:  { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
+  toggleDesc:   { fontSize: 11, color: Colors.textMuted, marginTop: 1 },
+  toggleDivider:{ height: 1, backgroundColor: Colors.border },
 
-  // Card
-  card:       { backgroundColor: Colors.cardBackground, borderRadius: Radius.lg, padding: 16, ...Shadow.sm },
-  rowDivider: { height: 1, backgroundColor: Colors.divider, marginLeft: 26 },
-
-  // Section header
-  sectionHead:      { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  sectionHeadLeft:  { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  sectionTitle:     { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
-  sectionBadge:     {
-    backgroundColor: Colors.accent, borderRadius: 10,
-    minWidth: 20, height: 20, alignItems: 'center', justifyContent: 'center', paddingHorizontal: 5,
+  locFab: {
+    position: 'absolute', right: 14, zIndex: 1000,
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#FFF', alignItems: 'center', justifyContent: 'center',
+    ...Shadow.md,
   },
-  sectionBadgeText: { fontSize: 10, fontWeight: '800', color: '#FFF' },
-  seeAll:           { fontSize: FontSize.sm, fontWeight: '600', color: Colors.accent },
 
-  // Stat chips
-  statsRow:    { flexDirection: 'row', marginBottom: 16 },
-  statChip:    { flex: 1, alignItems: 'center', gap: 2 },
-  statValue:   { fontSize: 28, fontWeight: '900', color: Colors.textPrimary, lineHeight: 32 },
-  statLabel:   { fontSize: 10.5, color: Colors.textMuted, fontWeight: '500' },
-  statDivider: { width: 1, backgroundColor: Colors.border, marginVertical: 6 },
-
-  // Fleet bar
-  barWrap:    { gap: 8 },
-  bar:        {
-    flexDirection: 'row', height: 10, borderRadius: 5,
-    overflow: 'hidden', backgroundColor: Colors.border,
+  selectedCard: {
+    position: 'absolute', left: 12, right: 12, bottom: 72, zIndex: 1000,
+    backgroundColor: '#FFF', borderRadius: Radius.lg, overflow: 'hidden',
+    ...Shadow.lg,
   },
-  barSeg:     { height: '100%' },
-  barLegend:  { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
-  legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
-  legendDot:  { width: 8, height: 8, borderRadius: 4 },
-  legendLabel:{ fontSize: 11, color: Colors.textSecondary, fontWeight: '500' },
+  selectedMain:   { flexDirection: 'row', alignItems: 'center' },
+  selectedAccent: { width: 4, alignSelf: 'stretch' },
+  selectedInfo:   { flex: 1, paddingVertical: 10, paddingHorizontal: 10 },
+  selectedPlate:  { fontSize: 14, fontWeight: '800', color: Colors.textPrimary },
+  selectedModel:  { fontSize: 11, color: Colors.textSecondary, marginTop: 2 },
+  selectedAddr:   { fontSize: 10.5, color: Colors.textMuted, marginTop: 2 },
+  selectedRight:  { flexDirection: 'row', alignItems: 'center', gap: 6, paddingRight: 10 },
+  speedBadge:     { borderRadius: 10, paddingHorizontal: 7, paddingVertical: 3 },
+  speedText:      { fontSize: 11, fontWeight: '700' },
+  callBtn:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, backgroundColor: Colors.statusActive, paddingVertical: 8 },
+  callBtnText:    { fontSize: 12.5, fontWeight: '700', color: '#FFF' },
 
-  // Metrics row
-  metricsRow:   { flexDirection: 'row', gap: 10 },
-  metricPill:   {
-    flex: 1, backgroundColor: Colors.cardBackground,
-    borderRadius: Radius.md, padding: 14,
-    alignItems: 'center', gap: 5, ...Shadow.sm,
+  // Legend
+  legend: {
+    position: 'absolute', left: 12, top: '20%', zIndex: 999,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: Radius.md, paddingHorizontal: 11, paddingVertical: 10,
+    minWidth: 148,
+    ...Shadow.md,
   },
-  metricIconBg: { width: 38, height: 38, borderRadius: 19, alignItems: 'center', justifyContent: 'center' },
-  metricValue:  { fontSize: 20, fontWeight: '800', color: Colors.textPrimary },
-  metricLabel:  { fontSize: 10.5, color: Colors.textMuted, fontWeight: '500' },
+  legendHeader: {
+    flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 7,
+  },
+  legendTitle: { flex: 1, fontSize: 11, fontWeight: '800', color: Colors.textPrimary, letterSpacing: 0.2 },
+  legendDivider: { height: 1, backgroundColor: Colors.border, marginBottom: 8 },
+  legendRow: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 6 },
+  legendDot: { width: 11, height: 11, borderRadius: 5.5, flexShrink: 0 },
+  legendText: { flex: 1 },
+  legendLabel: { fontSize: 11.5, fontWeight: '700', color: Colors.textPrimary, lineHeight: 14 },
+  legendDesc:  { fontSize: 9.5, color: Colors.textMuted, lineHeight: 12 },
+  legendTab: {
+    position: 'absolute', left: 12, top: '20%', zIndex: 999,
+    flexDirection: 'row', alignItems: 'center', gap: 5,
+    backgroundColor: 'rgba(255,255,255,0.96)', borderRadius: Radius.md,
+    paddingHorizontal: 10, paddingVertical: 7,
+    ...Shadow.md,
+  },
+  legendTabText: { fontSize: 11, fontWeight: '700', color: Colors.primary },
 
-  // Vehicle row
-  vehicleRow:      { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11 },
-  vDot:            { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },
-  vInfo:           { flex: 1 },
-  vPlate:          { fontSize: 14, fontWeight: '700', color: Colors.textPrimary },
-  vSub:            { fontSize: 11.5, color: Colors.textSecondary, marginTop: 2 },
-  movingBadge:     { borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
-  movingBadgeText: { fontSize: 11, fontWeight: '700' },
-  statusBadge:     { borderRadius: 12, paddingHorizontal: 9, paddingVertical: 3 },
-  statusBadgeText: { fontSize: 11, fontWeight: '700' },
-
-  // Alert row
-  alertRow:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
-  alertIconWrap:{ width: 36, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
-  alertInfo:    { flex: 1 },
-  alertMsg:     { fontSize: 13, fontWeight: '600', color: Colors.textPrimary, lineHeight: 18 },
-  alertMeta:    { fontSize: 11, color: Colors.textMuted, marginTop: 2 },
-  unreadPip:    { width: 8, height: 8, borderRadius: 4, flexShrink: 0 },
-
-  // Empty state
-  emptyState: { alignItems: 'center', paddingVertical: 22, gap: 7 },
-  emptyText:  { fontSize: FontSize.sm, color: Colors.textMuted },
+  chipStrip: {
+    position: 'absolute', bottom: 0, left: 0, right: 0, zIndex: 1000,
+    backgroundColor: 'rgba(255,255,255,0.97)',
+    borderTopWidth: 1, borderTopColor: Colors.border,
+  },
+  chipList:       { paddingHorizontal: 12, paddingVertical: 9, gap: 8 },
+  chip:           { flexDirection: 'row', alignItems: 'center', gap: 5, paddingHorizontal: 11, paddingVertical: 6, borderRadius: Radius.full, backgroundColor: Colors.backgroundLight, borderWidth: 1, borderColor: Colors.border },
+  chipActive:     { backgroundColor: Colors.primary, borderColor: Colors.primary },
+  chipDot:        { width: 7, height: 7, borderRadius: 3.5 },
+  chipText:       { fontSize: FontSize.sm, color: Colors.textPrimary, fontWeight: '600' },
+  chipTextActive: { color: '#FFF' },
 });

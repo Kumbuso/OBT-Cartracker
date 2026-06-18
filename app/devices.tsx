@@ -8,32 +8,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { Colors, Spacing, Radius, FontSize, Shadow } from '../constants/theme';
 import { useFleet } from '../context/FleetContext';
-
-// ── Types ──────────────────────────────────────────────────────────────────────
-
-type DeviceType   = 'gps' | 'fuel' | 'obd' | 'dashcam' | 'temp';
-type DeviceStatus = 'online' | 'offline' | 'fault' | 'low_battery';
-
-interface Device {
-  id: string;
-  serial: string;
-  imei: string | null;       // 15-digit IMEI for cellular devices
-  simNumber: string | null;  // SIM card phone number
-  type: DeviceType;
-  status: DeviceStatus;
-  vehiclePlate: string | null;
-  lastSeen: string;
-  battery: number | null;
-  signal: number | null;
-  firmware: string;
-  fault: string | null;
-  notes: string;
-}
-
-type NewDevice = Omit<Device, 'id' | 'lastSeen' | 'battery' | 'signal' | 'firmware' | 'fault'>;
+import { useDeviceRegistry, Device, DeviceType, RegisterDeviceInput } from '../context/DeviceContext';
 
 // ── Registration status ────────────────────────────────────────────────────────
 
+type DeviceStatus = Device['status'];
 type RegStatus = 'active' | 'pending_assignment' | 'not_registered' | 'not_required';
 
 function getRegStatus(device: Device): RegStatus {
@@ -79,59 +58,11 @@ const FILTER_OPTIONS: Array<{ key: DeviceType | 'all'; label: string }> = [
   { key: 'temp',    label: 'Temp' },
 ];
 
-// ── Seed Data ──────────────────────────────────────────────────────────────────
-
-const SEED_DEVICES: Device[] = [
-  {
-    id: 'd1', serial: 'OBT-GPS-001', imei: '356307042441013', simNumber: '+260 95 1234 001',
-    type: 'gps', status: 'online', vehiclePlate: 'ZMB 001A',
-    lastSeen: '2026-06-12T10:48:00Z', battery: 87, signal: 4, firmware: '3.2.1', fault: null, notes: '',
-  },
-  {
-    id: 'd2', serial: 'OBT-GPS-002', imei: '356307042441021', simNumber: '+260 95 1234 002',
-    type: 'gps', status: 'online', vehiclePlate: 'ZMB 002A',
-    lastSeen: '2026-06-12T10:45:00Z', battery: 65, signal: 3, firmware: '3.2.1', fault: null, notes: '',
-  },
-  {
-    id: 'd3', serial: 'OBT-GPS-003', imei: '356307042441039', simNumber: '+260 95 1234 003',
-    type: 'gps', status: 'fault', vehiclePlate: 'ZMB 004A',
-    lastSeen: '2026-06-12T09:31:00Z', battery: 12, signal: 0, firmware: '3.1.8', fault: 'GPS module not responding', notes: '',
-  },
-  {
-    id: 'd4', serial: 'OBT-GPS-004', imei: null, simNumber: null,
-    type: 'gps', status: 'offline', vehiclePlate: null,
-    lastSeen: '2026-06-11T18:00:00Z', battery: 45, signal: null, firmware: '3.2.1', fault: null, notes: 'Spare unit — IMEI not yet registered',
-  },
-  {
-    id: 'd5', serial: 'OBT-FUEL-001', imei: null, simNumber: null,
-    type: 'fuel', status: 'online', vehiclePlate: 'ZMB 001A',
-    lastSeen: '2026-06-12T10:47:00Z', battery: null, signal: null, firmware: '1.4.0', fault: null, notes: '',
-  },
-  {
-    id: 'd6', serial: 'OBT-FUEL-002', imei: null, simNumber: null,
-    type: 'fuel', status: 'online', vehiclePlate: 'ZMB 003A',
-    lastSeen: '2026-06-12T10:44:00Z', battery: null, signal: null, firmware: '1.4.0', fault: null, notes: '',
-  },
-  {
-    id: 'd7', serial: 'OBT-OBD-001', imei: '862531041782345', simNumber: null,
-    type: 'obd', status: 'online', vehiclePlate: 'ZMB 002A',
-    lastSeen: '2026-06-12T10:46:00Z', battery: null, signal: null, firmware: '2.1.3', fault: null, notes: '',
-  },
-  {
-    id: 'd8', serial: 'OBT-CAM-001', imei: null, simNumber: null,
-    type: 'dashcam', status: 'online', vehiclePlate: 'ZMB 005A',
-    lastSeen: '2026-06-12T10:48:00Z', battery: null, signal: null, firmware: '1.1.0', fault: null, notes: '',
-  },
-  {
-    id: 'd9', serial: 'OBT-TEMP-001', imei: null, simNumber: null,
-    type: 'temp', status: 'low_battery', vehiclePlate: 'ZMB 003A',
-    lastSeen: '2026-06-12T10:30:00Z', battery: 8, signal: null, firmware: '1.0.5', fault: null, notes: '',
-  },
-];
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
-function timeAgo(iso: string) {
+function timeAgo(iso: string | null) {
+  if (!iso) return 'Never';
   const mins = Math.floor((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 1)  return 'Just now';
   if (mins < 60) return `${mins}m ago`;
@@ -243,7 +174,7 @@ function DeviceDetailSheet({
   device: Device | null;
   visible: boolean;
   onClose: () => void;
-  onRemove: (id: string) => void;
+  onRemove: (id: string) => void;  // caller handles closing
 }) {
   if (!device) return null;
   const typeMeta   = TYPE_META[device.type];
@@ -308,7 +239,7 @@ function DeviceDetailSheet({
             <View style={styles.detailCard}>
               <DetailRow label="Serial Number" value={device.serial} />
               <DetailRow label="Device Type"   value={typeMeta.label} />
-              <DetailRow label="Firmware"      value={`v${device.firmware}`} />
+              <DetailRow label="Firmware"      value={device.firmware ? `v${device.firmware}` : '—'} />
               <DetailRow label="Assigned To"   value={device.vehiclePlate ?? 'Unassigned'} />
               <DetailRow label="Last Seen"     value={timeAgo(device.lastSeen)} last />
             </View>
@@ -354,7 +285,7 @@ function DeviceDetailSheet({
 
             <TouchableOpacity
               style={styles.removeBtn}
-              onPress={() => { onRemove(device.id); onClose(); }}
+              onPress={() => onRemove(device.id)}
               activeOpacity={0.8}
             >
               <Ionicons name="trash-outline" size={16} color={Colors.danger} />
@@ -384,21 +315,22 @@ function DetailRow({
 // ── Add Device Sheet ───────────────────────────────────────────────────────────
 
 function AddDeviceSheet({
-  visible, onClose, onSave, vehiclePlates,
+  visible, onClose, onSave, vehicleOptions,
 }: {
   visible: boolean;
   onClose: () => void;
-  onSave: (d: NewDevice) => void;
-  vehiclePlates: string[];
+  onSave: (d: RegisterDeviceInput) => Promise<void>;
+  vehicleOptions: { id: string; plate: string }[];
 }) {
-  const [type,      setType]      = useState<DeviceType>('gps');
-  const [serial,    setSerial]    = useState('');
-  const [imei,      setImei]      = useState('');
-  const [simNumber, setSimNumber] = useState('');
-  const [plate,     setPlate]     = useState<string | null>(null);
-  const [notes,     setNotes]     = useState('');
-  const [saving,    setSaving]    = useState(false);
-  const [errors,    setErrors]    = useState<Record<string, string>>({});
+  const [type,       setType]       = useState<DeviceType>('gps');
+  const [serial,     setSerial]     = useState('');
+  const [imei,       setImei]       = useState('');
+  const [simNumber,  setSimNumber]  = useState('');
+  const [vehicleId,  setVehicleId]  = useState<string | null>(null);
+  const [notes,      setNotes]      = useState('');
+  const [saving,     setSaving]     = useState(false);
+  const [errors,     setErrors]     = useState<Record<string, string>>({});
+  const [apiError,   setApiError]   = useState<string | null>(null);
 
   const needsImei = TYPE_META[type].needsImei;
   const imeiClean = imei.replace(/\s/g, '');
@@ -406,7 +338,7 @@ function AddDeviceSheet({
 
   const reset = () => {
     setType('gps'); setSerial(''); setImei(''); setSimNumber('');
-    setPlate(null); setNotes(''); setErrors({});
+    setVehicleId(null); setNotes(''); setErrors({}); setApiError(null);
   };
 
   const validate = () => {
@@ -426,21 +358,23 @@ function AddDeviceSheet({
     if (Object.keys(e).length > 0) return;
 
     setSaving(true);
-    await new Promise((r) => setTimeout(r, 400));
-
-    onSave({
-      serial:    serial.trim().toUpperCase(),
-      imei:      needsImei ? imeiClean : null,
-      simNumber: (type === 'gps' && simNumber.trim()) ? simNumber.trim() : null,
-      type,
-      status:    'offline',
-      vehiclePlate: plate,
-      notes:     notes.trim(),
-    });
-
-    setSaving(false);
-    reset();
-    onClose();
+    setApiError(null);
+    try {
+      await onSave({
+        serial:    serial.trim().toUpperCase(),
+        imei:      needsImei ? imeiClean : null,
+        simNumber: (type === 'gps' && simNumber.trim()) ? simNumber.trim() : null,
+        type,
+        vehicleId: vehicleId ?? null,
+        notes:     notes.trim() || undefined,
+      });
+      reset();
+      onClose();
+    } catch (err: any) {
+      setApiError(err?.message ?? 'Failed to register device');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -571,18 +505,18 @@ function AddDeviceSheet({
               <Text style={styles.addLabel}>Assign to Vehicle  (optional)</Text>
               <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8, paddingBottom: 2 }}>
                 <TouchableOpacity
-                  style={[styles.plateChip, plate === null && styles.plateChipActive]}
-                  onPress={() => setPlate(null)}
+                  style={[styles.plateChip, vehicleId === null && styles.plateChipActive]}
+                  onPress={() => setVehicleId(null)}
                 >
-                  <Text style={[styles.plateChipText, plate === null && styles.plateChipTextActive]}>Unassigned</Text>
+                  <Text style={[styles.plateChipText, vehicleId === null && styles.plateChipTextActive]}>Unassigned</Text>
                 </TouchableOpacity>
-                {vehiclePlates.map((p) => (
+                {vehicleOptions.map((v) => (
                   <TouchableOpacity
-                    key={p}
-                    style={[styles.plateChip, plate === p && styles.plateChipActive]}
-                    onPress={() => setPlate(p)}
+                    key={v.id}
+                    style={[styles.plateChip, vehicleId === v.id && styles.plateChipActive]}
+                    onPress={() => setVehicleId(v.id)}
                   >
-                    <Text style={[styles.plateChipText, plate === p && styles.plateChipTextActive]}>{p}</Text>
+                    <Text style={[styles.plateChipText, vehicleId === v.id && styles.plateChipTextActive]}>{v.plate}</Text>
                   </TouchableOpacity>
                 ))}
               </ScrollView>
@@ -602,6 +536,13 @@ function AddDeviceSheet({
                 />
               </View>
             </View>
+
+            {!!apiError && (
+              <View style={styles.apiErrorBox}>
+                <Ionicons name="warning-outline" size={14} color={Colors.danger} />
+                <Text style={styles.apiErrorText}>{apiError}</Text>
+              </View>
+            )}
 
             <TouchableOpacity
               style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
@@ -625,8 +566,8 @@ function AddDeviceSheet({
 export default function DevicesScreen() {
   const router = useRouter();
   const { vehicles } = useFleet();
+  const { devices, loading, error, registerDevice, deleteDevice, refresh } = useDeviceRegistry();
 
-  const [devices,    setDevices]    = useState<Device[]>(SEED_DEVICES);
   const [filter,     setFilter]     = useState<DeviceType | 'all'>('all');
   const [selected,   setSelected]   = useState<Device | null>(null);
   const [showDetail, setShowDetail] = useState(false);
@@ -638,22 +579,14 @@ export default function DevicesScreen() {
   const offlineN  = devices.filter((d) => d.status === 'offline').length;
   const unregN    = devices.filter((d) => getRegStatus(d) === 'not_registered').length;
 
-  const vehiclePlates = vehicles.map((v) => v.plate);
+  const vehicleOptions = vehicles.map((v) => ({ id: v.id, plate: v.plate }));
 
-  const handleAdd = (data: NewDevice) => {
-    setDevices((prev) => [...prev, {
-      ...data,
-      id:       `d${Date.now()}`,
-      lastSeen: new Date().toISOString(),
-      battery:  data.type === 'gps' ? 100 : null,
-      signal:   data.type === 'gps' ? 0   : null,
-      firmware: '1.0.0',
-      fault:    null,
-    }]);
+  const handleAdd = async (data: RegisterDeviceInput) => {
+    await registerDevice(data);
   };
 
-  const handleRemove = (id: string) => {
-    setDevices((prev) => prev.filter((d) => d.id !== id));
+  const handleRemove = async (id: string) => {
+    await deleteDevice(id);
   };
 
   return (
@@ -671,6 +604,21 @@ export default function DevicesScreen() {
       </SafeAreaView>
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Loading / error */}
+        {loading && devices.length === 0 && (
+          <View style={styles.centeredMsg}>
+            <ActivityIndicator size="large" color={Colors.primary} />
+            <Text style={styles.centeredMsgText}>Loading devices…</Text>
+          </View>
+        )}
+        {!!error && (
+          <View style={styles.errorBox}>
+            <Ionicons name="alert-circle-outline" size={18} color={Colors.danger} />
+            <Text style={styles.errorBoxText}>{error}</Text>
+            <TouchableOpacity onPress={refresh}><Text style={styles.retryLink}>Retry</Text></TouchableOpacity>
+          </View>
+        )}
+
         {/* Stats strip */}
         <View style={styles.statsStrip}>
           <StatItem value={String(devices.length)} label="Total" />
@@ -739,13 +687,13 @@ export default function DevicesScreen() {
         device={selected}
         visible={showDetail}
         onClose={() => setShowDetail(false)}
-        onRemove={handleRemove}
+        onRemove={(id) => { handleRemove(id); setShowDetail(false); }}
       />
       <AddDeviceSheet
         visible={showAdd}
         onClose={() => setShowAdd(false)}
         onSave={handleAdd}
-        vehiclePlates={vehiclePlates}
+        vehicleOptions={vehicleOptions}
       />
     </View>
   );
@@ -919,4 +867,23 @@ const styles = StyleSheet.create({
   saveBtn: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: Colors.primary, borderRadius: Radius.md, height: 50, marginTop: Spacing.sm },
   saveBtnDisabled: { opacity: 0.6 },
   saveBtnText:     { fontSize: FontSize.md, fontWeight: '800', color: Colors.textLight },
+
+  centeredMsg:     { alignItems: 'center', paddingVertical: 40, gap: 10 },
+  centeredMsgText: { fontSize: FontSize.sm, color: Colors.textMuted },
+  errorBox: {
+    flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+    backgroundColor: '#FEF2F2', borderRadius: Radius.sm,
+    padding: 10, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: '#FECACA',
+  },
+  errorBoxText: { flex: 1, fontSize: FontSize.xs, color: Colors.danger },
+  retryLink:    { fontSize: FontSize.xs, fontWeight: '700', color: Colors.primary, textDecorationLine: 'underline' },
+
+  apiErrorBox: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 8,
+    backgroundColor: '#FEF2F2', borderRadius: Radius.sm,
+    padding: 10, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: '#FECACA',
+  },
+  apiErrorText: { flex: 1, fontSize: FontSize.xs, color: Colors.danger },
 });

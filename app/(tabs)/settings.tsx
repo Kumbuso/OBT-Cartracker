@@ -821,7 +821,7 @@ export default function SettingsScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['bottom']}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.content}>
 
         {/* Profile card */}
         <View style={styles.profileCard}>

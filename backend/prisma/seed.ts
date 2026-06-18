@@ -185,6 +185,59 @@ async function main() {
     ],
   });
 
+  // Devices
+  await prisma.device.createMany({
+    data: [
+      {
+        serial: 'OBT-GPS-001', imei: '356307042441013', simNumber: '+260 95 1234 001',
+        type: 'gps', status: 'online', vehicleId: v1.id, orgId: org.id,
+        firmware: '3.2.1', battery: 87, signal: 4, lastSeen: now,
+      },
+      {
+        serial: 'OBT-GPS-002', imei: '356307042441021', simNumber: '+260 95 1234 002',
+        type: 'gps', status: 'online', vehicleId: v2.id, orgId: org.id,
+        firmware: '3.2.1', battery: 65, signal: 3, lastSeen: new Date(now.getTime() - 3 * 60000),
+      },
+      {
+        serial: 'OBT-GPS-003', imei: '356307042441039', simNumber: '+260 95 1234 003',
+        type: 'gps', status: 'fault', vehicleId: v4.id, orgId: org.id,
+        firmware: '3.1.8', battery: 12, signal: 0, fault: 'GPS module not responding',
+        lastSeen: new Date(now.getTime() - 37 * 60000),
+      },
+      {
+        serial: 'OBT-GPS-004', imei: null, simNumber: null,
+        type: 'gps', status: 'offline', vehicleId: null, orgId: org.id,
+        firmware: '3.2.1', battery: 45, notes: 'Spare unit — IMEI not yet registered',
+        lastSeen: new Date(now.getTime() - 16 * 3600000),
+      },
+      {
+        serial: 'OBT-FUEL-001', imei: null, simNumber: null,
+        type: 'fuel', status: 'online', vehicleId: v1.id, orgId: org.id,
+        firmware: '1.4.0', lastSeen: now,
+      },
+      {
+        serial: 'OBT-FUEL-002', imei: null, simNumber: null,
+        type: 'fuel', status: 'online', vehicleId: v3.id, orgId: org.id,
+        firmware: '1.4.0', lastSeen: new Date(now.getTime() - 4 * 60000),
+      },
+      {
+        serial: 'OBT-OBD-001', imei: '862531041782345', simNumber: null,
+        type: 'obd', status: 'online', vehicleId: v2.id, orgId: org.id,
+        firmware: '2.1.3', lastSeen: new Date(now.getTime() - 2 * 60000),
+      },
+      {
+        serial: 'OBT-TEMP-001', imei: null, simNumber: null,
+        type: 'temp', status: 'low_battery', vehicleId: v3.id, orgId: org.id,
+        firmware: '1.0.5', battery: 8, lastSeen: new Date(now.getTime() - 18 * 60000),
+      },
+    ],
+  });
+
+  // Sync vehicle.imei from registered GPS devices
+  await prisma.vehicle.update({ where: { id: v1.id }, data: { imei: '356307042441013' } });
+  await prisma.vehicle.update({ where: { id: v2.id }, data: { imei: '356307042441021' } });
+  await prisma.vehicle.update({ where: { id: v4.id }, data: { imei: '356307042441039' } });
+
   // Geofences
   await prisma.geofence.createMany({
     data: [

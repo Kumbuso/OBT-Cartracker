@@ -468,7 +468,7 @@ function OrgsView({ onAddOrg }: { onAddOrg: () => void }) {
   const trial     = organizations.filter((o) => o.status === 'trial').length;
 
   return (
-    <ScrollView contentContainerStyle={styles.listContent}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.listContent}>
       {/* Summary row */}
       <View style={styles.summaryRow}>
         <SummaryPill icon="business"         value={String(organizations.length)} label="Total"     color={Colors.primary} />
@@ -519,7 +519,7 @@ function UsersView({
   const pending   = filtered.filter((u) => u.status === 'pending').length;
 
   return (
-    <ScrollView contentContainerStyle={styles.listContent}>
+    <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.listContent}>
       <View style={styles.summaryRow}>
         <SummaryPill icon="people"           value={String(filtered.length)} label="Total"     color={Colors.primary} />
         <SummaryPill icon="checkmark-circle" value={String(active)}          label="Active"    color={Colors.statusActive} />

@@ -33,6 +33,13 @@ export interface Coordinates {
   address?: string;
 }
 
+export interface TripWaypoint {
+  latitude: number;
+  longitude: number;
+  timestamp: string;
+  speed: number;
+}
+
 export interface Trip {
   id: string;
   vehicleId: string;
@@ -48,6 +55,7 @@ export interface Trip {
   maxSpeed: number;
   avgSpeed: number;
   fuelUsed: number;
+  route?: TripWaypoint[];
 }
 
 export type AlertSeverity = 'critical' | 'warning' | 'info';

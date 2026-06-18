@@ -21,6 +21,7 @@ model Organization {
   vehicles  Vehicle[]
   drivers   Driver[]
   geofences Geofence[]
+  devices   Device[]
 
   @@map("organizations")
 }
@@ -106,8 +107,35 @@ model Vehicle {
   geofences      GeofenceVehicle[]
   locations      VehicleLocation[]
   sensorReadings SensorReading[]
+  devices        Device[]
 
   @@map("vehicles")
+}
+
+model Device {
+  id         String       @id @default(cuid())
+  serial     String
+  imei       String?      @unique
+  simNumber  String?
+  type       HwDeviceType @default(gps)
+  status     HwDeviceStatus @default(offline)
+  vehicleId  String?
+  orgId      String
+  firmware   String?
+  notes      String?
+  battery    Int?
+  signal     Int?
+  fault      String?
+  lastSeen   DateTime?
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  org     Organization @relation(fields: [orgId], references: [id])
+  vehicle Vehicle?     @relation(fields: [vehicleId], references: [id])
+
+  @@unique([serial, orgId])
+  @@index([orgId])
+  @@map("devices")
 }
 
 model SensorReading {
@@ -347,4 +375,19 @@ enum AccidentStatus {
   under_investigation
   resolved
   closed
+}
+
+enum HwDeviceType {
+  gps
+  fuel
+  obd
+  dashcam
+  temp
+}
+
+enum HwDeviceStatus {
+  online
+  offline
+  fault
+  low_battery
 }

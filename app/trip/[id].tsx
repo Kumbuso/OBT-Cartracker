@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, ScrollView, StyleSheet } from 'react-native';
-import { useLocalSearchParams } from 'expo-router';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity } from 'react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { mockTrips } from '../../data/mockData';
@@ -20,8 +20,9 @@ function formatDuration(mins: number) {
 }
 
 export default function TripDetailScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const trip = mockTrips.find((t) => t.id === id);
+  const { id }  = useLocalSearchParams<{ id: string }>();
+  const router  = useRouter();
+  const trip    = mockTrips.find((t) => t.id === id);
 
   if (!trip) {
     return (
@@ -122,6 +123,29 @@ export default function TripDetailScreen() {
             value={`${(trip.distance / trip.fuelUsed).toFixed(1)} km/L`}
           />
         </View>
+
+        {/* Replay button */}
+        {trip.route && trip.route.length > 0 && (
+          <>
+            <Text style={styles.sectionTitle}>Trip Replay</Text>
+            <TouchableOpacity
+              style={styles.replayCard}
+              onPress={() => router.push(`/trip/replay/${trip.id}` as any)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.replayIconWrap}>
+                <Ionicons name="play-circle" size={28} color={Colors.accent} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.replayTitle}>Watch Route Replay</Text>
+                <Text style={styles.replaySub}>
+                  {trip.route.length} GPS points  ·  {trip.distance.toFixed(1)} km  ·  Max {trip.maxSpeed} km/h
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={Colors.textMuted} />
+            </TouchableOpacity>
+          </>
+        )}
 
         <View style={{ height: Spacing.xl }} />
       </ScrollView>
@@ -287,4 +311,20 @@ const styles = StyleSheet.create({
   summaryValue: { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
   summaryHighlight: { color: Colors.danger },
   summaryDivider: { height: 1, backgroundColor: Colors.divider },
+
+  // Replay
+  replayCard: {
+    flexDirection: 'row', alignItems: 'center', gap: 14,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: Radius.md, padding: Spacing.md,
+    borderWidth: 1.5, borderColor: Colors.accent + '30',
+    ...Shadow.sm,
+  },
+  replayIconWrap: {
+    width: 52, height: 52, borderRadius: 26,
+    backgroundColor: Colors.accent + '12',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  replayTitle: { fontSize: FontSize.md, fontWeight: '800', color: Colors.textPrimary },
+  replaySub:   { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 3 },
 });

@@ -4,12 +4,14 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AuthProvider } from '../context/AuthContext';
 import { FleetProvider } from '../context/FleetContext';
 import { UserManagementProvider } from '../context/UserManagementContext';
+import { DeviceProvider } from '../context/DeviceContext';
 import { Colors } from '../constants/theme';
 
 export default function RootLayout() {
   return (
     <AuthProvider>
       <FleetProvider>
+      <DeviceProvider>
       <UserManagementProvider>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <StatusBar style="light" />
@@ -46,6 +48,7 @@ export default function RootLayout() {
         </Stack>
       </GestureHandlerRootView>
       </UserManagementProvider>
+      </DeviceProvider>
       </FleetProvider>
     </AuthProvider>
   );

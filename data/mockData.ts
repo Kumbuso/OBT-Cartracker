@@ -1,4 +1,28 @@
-import type { Vehicle, Driver, Trip, Alert, FleetStats, FuelEvent, Geofence, AccidentReport, Organization, SystemUser } from '../types';
+import type { Vehicle, Driver, Trip, TripWaypoint, Alert, FleetStats, FuelEvent, Geofence, AccidentReport, Organization, SystemUser } from '../types';
+
+// Deterministic route generator — sinusoidal lateral variance, bell-curve speed profile
+function mkRoute(
+  startLat: number, startLng: number,
+  endLat: number,   endLng: number,
+  startISO: string,
+  durationMins: number,
+  count = 20,
+  maxSpeed = 90,
+): TripWaypoint[] {
+  const startMs = new Date(startISO).getTime();
+  return Array.from({ length: count }, (_, i) => {
+    const t = count === 1 ? 0 : i / (count - 1);
+    const speed = (i === 0 || i === count - 1)
+      ? 0
+      : Math.round(Math.sin(t * Math.PI) * (maxSpeed - 8) + 8);
+    return {
+      latitude:  startLat + (endLat - startLat) * t + Math.sin(i * 1.7) * 0.0014,
+      longitude: startLng + (endLng - startLng) * t + Math.cos(i * 1.3) * 0.0009,
+      timestamp: new Date(startMs + t * durationMins * 60_000).toISOString(),
+      speed,
+    };
+  });
+}
 
 export const mockDrivers: Driver[] = [
   { id: 'd1', name: 'Chanda Mwape',     phone: '+260 97 1234 501', licenseNumber: 'ZPS-DL-2023-001' },
@@ -123,6 +147,7 @@ export const mockTrips: Trip[] = [
     maxSpeed: 95,
     avgSpeed: 52,
     fuelUsed: 4.2,
+    route: mkRoute(-15.5533, 28.2567, -15.4147, 28.2826, '2026-06-11T08:00:00.000Z', 112, 22, 95),
   },
   {
     id: 't2',
@@ -139,6 +164,7 @@ export const mockTrips: Trip[] = [
     maxSpeed: 72,
     avgSpeed: 38,
     fuelUsed: 3.1,
+    route: mkRoute(-12.9667, 28.6333, -12.8167, 28.2167, '2026-06-11T04:00:00.000Z', 90, 20, 72),
   },
   {
     id: 't3',
@@ -155,6 +181,7 @@ export const mockTrips: Trip[] = [
     maxSpeed: 68,
     avgSpeed: 41,
     fuelUsed: 2.4,
+    route: mkRoute(-15.3950, 28.3333, -15.4020, 28.2990, '2026-06-05T09:00:00.000Z', 65, 18, 68),
   },
   {
     id: 't4',
@@ -171,6 +198,7 @@ export const mockTrips: Trip[] = [
     maxSpeed: 112,
     avgSpeed: 68,
     fuelUsed: 7.8,
+    route: mkRoute(-14.4467, 28.4467, -13.9700, 28.6600, '2026-06-11T09:30:00.000Z', 88, 22, 112),
   },
   {
     id: 't5',
@@ -187,6 +215,7 @@ export const mockTrips: Trip[] = [
     maxSpeed: 65,
     avgSpeed: 38,
     fuelUsed: 1.9,
+    route: mkRoute(-15.4167, 28.2833, -15.3833, 28.3250, '2026-01-15T08:00:00.000Z', 45, 16, 65),
   },
 ];
 

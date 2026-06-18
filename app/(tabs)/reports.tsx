@@ -83,6 +83,46 @@ function formatDuration(mins: number) {
   return h > 0 ? `${h}h ${m}m` : `${m}m`;
 }
 
+function bucketTripsByTime(trips: { startTime: string }[], range: DateRange): { label: string; value: number }[] {
+  const diffDays = (range.to.getTime() - range.from.getTime()) / 86_400_000;
+  const DAY = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'];
+
+  if (diffDays <= 1) {
+    return ['12a', '4a', '8a', '12p', '4p', '8p'].map((label, i) => ({
+      label,
+      value: trips.filter((t) => {
+        const h = new Date(t.startTime).getHours();
+        return h >= i * 4 && h < (i + 1) * 4;
+      }).length,
+    }));
+  }
+
+  if (diffDays <= 10) {
+    const count = Math.min(Math.ceil(diffDays) + 1, 7);
+    return Array.from({ length: count }, (_, i) => {
+      const d = new Date(range.from);
+      d.setDate(d.getDate() + i);
+      return {
+        label: DAY[d.getDay()],
+        value: trips.filter((t) => new Date(t.startTime).toDateString() === d.toDateString()).length,
+      };
+    });
+  }
+
+  const weeks: { label: string; value: number }[] = [];
+  const cur = new Date(range.from);
+  for (let wk = 1; cur <= range.to && wk <= 8; wk++) {
+    const end = new Date(cur);
+    end.setDate(end.getDate() + 6);
+    weeks.push({
+      label: `W${wk}`,
+      value: trips.filter((t) => { const d = new Date(t.startTime); return d >= cur && d <= end; }).length,
+    });
+    cur.setDate(cur.getDate() + 7);
+  }
+  return weeks;
+}
+
 // ─── Date Range Panel ─────────────────────────────────────────────────────────
 
 function DateRangePanel({
@@ -184,6 +224,28 @@ function FleetReport({ dateRange }: { dateRange: DateRange }) {
 
       <View style={styles.card}>
         <View style={styles.cardTitleRow}>
+          <Ionicons name="pie-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Fleet Distribution</Text>
+        </View>
+        <SegmentedBar segments={statusRows.map((r) => ({ label: r.label, value: r.count, color: r.color }))} />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Trips per Vehicle</Text>
+        </View>
+        <MiniBarChart
+          barColor={Colors.primary}
+          data={mockVehicles.map((v) => ({
+            label: v.plate,
+            value: trips.filter((t) => t.vehicleId === v.id).length,
+          }))}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
           <Ionicons name="car-outline" size={16} color={Colors.accent} />
           <Text style={styles.cardTitle}>Status Breakdown</Text>
         </View>
@@ -237,6 +299,14 @@ function TripReport({ dateRange }: { dateRange: DateRange }) {
         <StatBox icon="checkmark-circle-outline" value={String(completed.length)}   label="Completed" color={Colors.statusActive} />
         <StatBox icon="radio-button-on-outline"  value={String(inProgress.length)}  label="Active"    color={Colors.warning} />
         <StatBox icon="time-outline"             value={formatDuration(avgDuration)} label="Avg Time"  color={Colors.primary} />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Trip Activity</Text>
+        </View>
+        <MiniBarChart data={bucketTripsByTime(trips, dateRange)} barColor={Colors.accent} />
       </View>
 
       <View style={styles.card}>
@@ -335,6 +405,39 @@ function DriverReport({ dateRange }: { dateRange: DateRange }) {
         <StatBox icon="warning-outline" value={String(mockAlerts.length)} label="Incidents" color={Colors.warning} />
       </View>
 
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Distance by Driver</Text>
+        </View>
+        <HorizontalBarChart
+          barColor={Colors.primary}
+          data={driverStats
+            .sort((a, b) => b.totalDist - a.totalDist)
+            .map(({ driver, totalDist }) => ({
+              label: driver.name.split(' ')[0],
+              value: totalDist,
+              valueLabel: `${totalDist.toFixed(0)} km`,
+            }))}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Trips per Driver</Text>
+        </View>
+        <MiniBarChart
+          barColor={Colors.accent}
+          data={driverStats
+            .sort((a, b) => b.trips - a.trips)
+            .map(({ driver, trips: dCount }) => ({
+              label: driver.name.split(' ')[0],
+              value: dCount,
+            }))}
+        />
+      </View>
+
       {driverStats.map(({ driver, trips: dCount, totalDist, totalFuel, maxSpeed, avgSpeed, incidents }) => (
         <View key={driver.id} style={styles.card}>
           <View style={styles.driverHeader}>
@@ -417,6 +520,42 @@ function FuelReport({ dateRange }: { dateRange: DateRange }) {
           value={String(mockVehicles.filter((v) => v.fuelLevel < 25).length)}
           label="Low Fuel"
           color={Colors.danger}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Consumption per Vehicle</Text>
+        </View>
+        <MiniBarChart
+          barColor={Colors.info}
+          data={vehiclesFuel
+            .sort((a, b) => b.used - a.used)
+            .map(({ vehicle, used }) => ({
+              label: vehicle.plate,
+              value: parseFloat(used.toFixed(1)),
+              color: used > 30 ? Colors.danger : used > 15 ? Colors.warning : Colors.statusActive,
+            }))}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="leaf-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>Fuel Efficiency (km/L)</Text>
+        </View>
+        <HorizontalBarChart
+          barColor={Colors.statusActive}
+          data={vehiclesFuel
+            .filter(({ used }) => used > 0)
+            .sort((a, b) => b.efficiency - a.efficiency)
+            .map(({ vehicle, efficiency }) => ({
+              label: vehicle.plate,
+              value: parseFloat(efficiency.toFixed(1)),
+              valueLabel: `${efficiency.toFixed(1)} km/L`,
+              color: efficiency >= 12 ? Colors.statusActive : efficiency >= 8 ? Colors.warning : Colors.danger,
+            }))}
         />
       </View>
 
@@ -550,6 +689,36 @@ function AccidentReportSection({ dateRange }: { dateRange: DateRange }) {
         <StatBox icon="construct-outline"    value={String(open)}     label="Open"     color={Colors.accent} />
       </View>
 
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>By Severity</Text>
+        </View>
+        <HorizontalBarChart
+          data={[
+            { label: 'Minor',    value: accidents.filter((a) => a.severity === 'minor').length,    color: SEVERITY_COLOR.minor },
+            { label: 'Moderate', value: accidents.filter((a) => a.severity === 'moderate').length, color: SEVERITY_COLOR.moderate },
+            { label: 'Severe',   value: accidents.filter((a) => a.severity === 'severe').length,   color: SEVERITY_COLOR.severe },
+            { label: 'Fatal',    value: accidents.filter((a) => a.severity === 'fatal').length,    color: SEVERITY_COLOR.fatal },
+          ].filter((d) => d.value > 0)}
+        />
+      </View>
+
+      <View style={styles.card}>
+        <View style={styles.cardTitleRow}>
+          <Ionicons name="bar-chart-outline" size={16} color={Colors.accent} />
+          <Text style={styles.cardTitle}>By Status</Text>
+        </View>
+        <HorizontalBarChart
+          data={[
+            { label: 'Reported',       value: accidents.filter((a) => a.status === 'reported').length,             color: STATUS_COLOR.reported },
+            { label: 'Investigating',  value: accidents.filter((a) => a.status === 'under_investigation').length,  color: STATUS_COLOR.under_investigation },
+            { label: 'Resolved',       value: accidents.filter((a) => a.status === 'resolved').length,             color: STATUS_COLOR.resolved },
+            { label: 'Closed',         value: accidents.filter((a) => a.status === 'closed').length,              color: STATUS_COLOR.closed },
+          ].filter((d) => d.value > 0)}
+        />
+      </View>
+
       {/* Damage summary card */}
       {totalDmg > 0 && (
         <View style={styles.card}>
@@ -668,6 +837,94 @@ function EmptyState({ icon, message }: { icon: string; message: string }) {
   );
 }
 
+// ─── Chart Components ─────────────────────────────────────────────────────────
+
+function MiniBarChart({
+  data, chartHeight = 72, barColor,
+}: {
+  data: { label: string; value: number; color?: string }[];
+  chartHeight?: number;
+  barColor?: string;
+}) {
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: chartHeight + 36, paddingTop: 16 }}>
+      {data.map((d, i) => {
+        const barH = Math.max(Math.round((d.value / max) * chartHeight), d.value > 0 ? 4 : 0);
+        return (
+          <View key={i} style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-end' }}>
+            {d.value > 0 && (
+              <Text style={styles.chartBarValue}>{d.value}</Text>
+            )}
+            <View style={[styles.chartBar, { height: barH, backgroundColor: d.color ?? barColor ?? Colors.primary }]} />
+            <Text style={styles.chartBarLabel} numberOfLines={1}>{d.label}</Text>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+function HorizontalBarChart({
+  data, barColor,
+}: {
+  data: { label: string; value: number; valueLabel?: string; color?: string }[];
+  barColor?: string;
+}) {
+  const max = Math.max(...data.map((d) => d.value), 1);
+  return (
+    <View style={{ gap: 10 }}>
+      {data.map((d, i) => (
+        <View key={i} style={{ gap: 3 }}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={styles.chartHLabel} numberOfLines={1}>{d.label}</Text>
+            <Text style={styles.chartHValue}>{d.valueLabel ?? String(d.value)}</Text>
+          </View>
+          <View style={styles.chartHTrack}>
+            <View style={[
+              styles.chartHFill,
+              { width: `${(d.value / max) * 100}%` as any, backgroundColor: d.color ?? barColor ?? Colors.accent },
+            ]} />
+          </View>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+function SegmentedBar({ segments }: {
+  segments: { label: string; value: number; color: string }[];
+}) {
+  const total = segments.reduce((s, x) => s + x.value, 0) || 1;
+  return (
+    <View style={{ gap: Spacing.sm }}>
+      <View style={styles.segTrack}>
+        {segments.filter((s) => s.value > 0).map((seg, i, arr) => (
+          <View
+            key={i}
+            style={[
+              styles.segFill,
+              { flex: seg.value, backgroundColor: seg.color },
+              i === 0 && styles.segFillFirst,
+              i === arr.length - 1 && styles.segFillLast,
+            ]}
+          />
+        ))}
+      </View>
+      <View style={styles.segLegend}>
+        {segments.map((seg, i) => (
+          <View key={i} style={styles.segLegendItem}>
+            <View style={[styles.segDot, { backgroundColor: seg.color }]} />
+            <Text style={styles.segLegendText}>
+              {seg.label} · {Math.round((seg.value / total) * 100)}%
+            </Text>
+          </View>
+        ))}
+      </View>
+    </View>
+  );
+}
+
 // ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function ReportsScreen() {
@@ -689,20 +946,33 @@ export default function ReportsScreen() {
   }, [period, customFrom, customTo, dateRange]);
 
   return (
-    <SafeAreaView style={styles.safe} edges={['bottom']}>
-      {/* Period selector */}
-      <View style={styles.periodRow}>
-        {PERIODS.map((p) => (
-          <TouchableOpacity
-            key={p.key}
-            style={[styles.periodBtn, period === p.key && styles.periodBtnActive]}
-            onPress={() => setPeriod(p.key)}
-          >
-            <Text style={[styles.periodBtnText, period === p.key && styles.periodBtnTextActive]}>
-              {p.label}
-            </Text>
-          </TouchableOpacity>
-        ))}
+    <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
+      {/* ─── Header ───────────────────────────────────────────────────────────── */}
+      <View style={styles.header}>
+        <View style={styles.headerTop}>
+          <View>
+            <Text style={styles.headerTitle}>Reports</Text>
+            <View style={styles.headerDateRow}>
+              <Ionicons name="calendar-outline" size={12} color={Colors.textMuted} />
+              <Text style={styles.headerDateText}>{periodLabel}</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Period selector pills */}
+        <View style={styles.periodRow}>
+          {PERIODS.map((p) => (
+            <TouchableOpacity
+              key={p.key}
+              style={[styles.periodBtn, period === p.key && styles.periodBtnActive]}
+              onPress={() => setPeriod(p.key)}
+            >
+              <Text style={[styles.periodBtnText, period === p.key && styles.periodBtnTextActive]}>
+                {p.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </View>
 
       {/* Custom date range panel — visible only when Range is selected */}
@@ -715,14 +985,13 @@ export default function ReportsScreen() {
         />
       )}
 
-      {/* Active range label strip */}
-      <View style={styles.rangeLabelRow}>
-        <Ionicons name="calendar-outline" size={12} color={Colors.textMuted} />
-        <Text style={styles.rangeLabelText}>{periodLabel}</Text>
-      </View>
-
-      {/* Report type tabs */}
-      <View style={styles.tabRow}>
+      {/* Report type tabs — horizontal scroll so labels never get crushed */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabScroll}
+        contentContainerStyle={styles.tabContent}
+      >
         {REPORT_TABS.map((t) => (
           <TouchableOpacity
             key={t.key}
@@ -731,17 +1000,17 @@ export default function ReportsScreen() {
           >
             <Ionicons
               name={t.icon as any}
-              size={16}
-              color={tab === t.key ? Colors.primary : Colors.textMuted}
+              size={14}
+              color={tab === t.key ? Colors.textLight : Colors.textMuted}
             />
             <Text style={[styles.reportTabText, tab === t.key && styles.reportTabTextActive]}>
               {t.label}
             </Text>
           </TouchableOpacity>
         ))}
-      </View>
+      </ScrollView>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {tab === 'fleet'     && <FleetReport         dateRange={dateRange} />}
         {tab === 'trips'     && <TripReport          dateRange={dateRange} />}
         {tab === 'drivers'   && <DriverReport        dateRange={dateRange} />}
@@ -757,18 +1026,46 @@ export default function ReportsScreen() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: Colors.backgroundLight },
 
+  // Header
+  header: {
+    backgroundColor: Colors.cardBackground,
+    paddingHorizontal: Spacing.md,
+    paddingTop: Spacing.sm,
+    paddingBottom: Spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    gap: Spacing.sm,
+  },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  headerTitle: {
+    fontSize: FontSize.xl,
+    fontWeight: '800',
+    color: Colors.textPrimary,
+    letterSpacing: -0.3,
+  },
+  headerDateRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 3,
+  },
+  headerDateText: {
+    fontSize: FontSize.xs,
+    color: Colors.textMuted,
+    fontWeight: '500',
+  },
+
   periodRow: {
     flexDirection: 'row',
     gap: Spacing.xs,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.sm,
-    backgroundColor: Colors.cardBackground,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
   },
   periodBtn: {
     flex: 1,
-    paddingVertical: 6,
+    paddingVertical: 7,
     borderRadius: Radius.md,
     alignItems: 'center',
     backgroundColor: Colors.backgroundLight,
@@ -821,38 +1118,36 @@ const styles = StyleSheet.create({
   presetBtnText: { fontSize: 11, fontWeight: '600', color: Colors.textSecondary },
   presetBtnTextActive: { color: Colors.accent },
 
-  // Active range label strip
-  rangeLabelRow: {
+  // Tab strip
+  tabScroll: {
+    backgroundColor: Colors.cardBackground,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+    flexGrow: 0,
+  },
+  tabContent: {
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm,
+    gap: Spacing.xs,
+    flexDirection: 'row',
+  },
+  reportTab: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: 5,
-    backgroundColor: Colors.cardBackground,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+    paddingHorizontal: 14,
+    paddingVertical: 7,
+    borderRadius: Radius.full,
+    backgroundColor: Colors.backgroundLight,
+    borderWidth: 1,
+    borderColor: Colors.border,
   },
-  rangeLabelText: { fontSize: 11, color: Colors.textMuted, fontWeight: '600' },
-
-  tabRow: {
-    flexDirection: 'row',
-    backgroundColor: Colors.cardBackground,
-    borderBottomWidth: 1,
-    borderBottomColor: Colors.border,
+  reportTabActive: {
+    backgroundColor: Colors.primary,
+    borderColor: Colors.primary,
   },
-  reportTab: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 4,
-    paddingVertical: 10,
-    borderBottomWidth: 2,
-    borderBottomColor: 'transparent',
-  },
-  reportTabActive: { borderBottomColor: Colors.primary },
   reportTabText: { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textMuted },
-  reportTabTextActive: { color: Colors.primary },
+  reportTabTextActive: { color: Colors.textLight },
 
   scroll: { padding: Spacing.md, paddingBottom: Spacing.xxl },
   section: { gap: Spacing.sm },
@@ -1004,4 +1299,21 @@ const styles = StyleSheet.create({
 
   accNotesRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 5, paddingTop: 2, borderTopWidth: 1, borderTopColor: Colors.divider },
   accNotes: { fontSize: FontSize.xs, color: Colors.textMuted, flex: 1, lineHeight: 18 },
+
+  // Chart shared styles
+  chartBar:       { width: '72%', borderRadius: 3 },
+  chartBarValue:  { fontSize: 9, fontWeight: '700', color: Colors.textSecondary, marginBottom: 2 },
+  chartBarLabel:  { fontSize: 9, color: Colors.textMuted, marginTop: 4, textAlign: 'center' },
+  chartHLabel:    { fontSize: FontSize.sm, fontWeight: '600', color: Colors.textPrimary, flex: 1, marginRight: 8 },
+  chartHValue:    { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textSecondary },
+  chartHTrack:    { height: 7, backgroundColor: Colors.divider, borderRadius: Radius.full, overflow: 'hidden' },
+  chartHFill:     { height: '100%' as any, borderRadius: Radius.full },
+  segTrack:       { flexDirection: 'row', height: 14, borderRadius: 7, overflow: 'hidden', gap: 2 },
+  segFill:        { height: '100%' as any },
+  segFillFirst:   { borderTopLeftRadius: 7, borderBottomLeftRadius: 7 },
+  segFillLast:    { borderTopRightRadius: 7, borderBottomRightRadius: 7 },
+  segLegend:      { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  segLegendItem:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
+  segDot:         { width: 8, height: 8, borderRadius: 4 },
+  segLegendText:  { fontSize: 10, color: Colors.textSecondary },
 });

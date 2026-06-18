@@ -354,7 +354,7 @@ export default function FuelScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
         {lowFuelVehicles.length > 0 && filterMode === 'all' && (
           <View style={styles.alertBanner}>
             <Ionicons name="warning" size={16} color={Colors.danger} />

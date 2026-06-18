@@ -11,6 +11,7 @@ import {
   TextInput,
   KeyboardAvoidingView,
   Platform,
+  ActivityIndicator,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,12 +20,81 @@ import StatusBadge from '../../components/StatusBadge';
 import { mockVehicles, mockTrips, mockAlerts, mockFuelEvents } from '../../data/mockData';
 import { Colors, Spacing, Radius, FontSize, Shadow } from '../../constants/theme';
 
+// ── Action definitions ───────────────────────────────────────────────────────
+
+type ActionKey = 'engineCut' | 'immobilize' | 'lockDoors' | 'horn' | 'flashLights' | 'pingLocation';
+
+interface VehicleAction {
+  key:     ActionKey;
+  label:   string;
+  icon:    string;
+  color:   string;
+  bg:      string;
+  danger?: boolean;
+  toggle?: boolean;
+  confirm?: string;
+}
+
+const ACTIONS: VehicleAction[] = [
+  {
+    key:     'engineCut',
+    label:   'Engine Cut',
+    icon:    'power',
+    color:   Colors.danger,
+    bg:      Colors.danger + '14',
+    danger:  true,
+    toggle:  true,
+    confirm: 'This will remotely cut the engine. The vehicle will lose power. Continue?',
+  },
+  {
+    key:    'immobilize',
+    label:  'Immobilize',
+    icon:   'lock-closed',
+    color:  '#EF4444',
+    bg:     '#EF4444' + '14',
+    danger: true,
+    toggle: true,
+    confirm: 'This will prevent the vehicle from being started. Continue?',
+  },
+  {
+    key:   'lockDoors',
+    label: 'Lock Doors',
+    icon:  'car-sport',
+    color: '#8B5CF6',
+    bg:    '#8B5CF6' + '14',
+    toggle: true,
+  },
+  {
+    key:   'horn',
+    label: 'Sound Horn',
+    icon:  'volume-high',
+    color: Colors.warning,
+    bg:    Colors.warning + '14',
+  },
+  {
+    key:   'flashLights',
+    label: 'Flash Lights',
+    icon:  'flashlight',
+    color: Colors.accent,
+    bg:    Colors.accent + '14',
+  },
+  {
+    key:   'pingLocation',
+    label: 'Ping Location',
+    icon:  'locate',
+    color: Colors.statusActive,
+    bg:    Colors.statusActive + '14',
+  },
+];
+
 export default function VehicleDetailScreen() {
   const { id }  = useLocalSearchParams<{ id: string }>();
   const router  = useRouter();
   const vehicle = mockVehicles.find((v) => v.id === id);
 
-  const [callLoading, setCallLoading] = useState(false);
+  const [callLoading,   setCallLoading]   = useState(false);
+  const [actionLoading, setActionLoading] = useState<ActionKey | null>(null);
+  const [activeToggles, setActiveToggles] = useState<Set<ActionKey>>(new Set());
 
   // ── Mileage state ────────────────────────────────────────────────────────────
   const [mileage, setMileage] = useState({
@@ -107,6 +177,43 @@ export default function VehicleDetailScreen() {
       await Linking.openURL(url);
     } else {
       Alert.alert('WhatsApp Not Found', 'Please install WhatsApp to use this feature.');
+    }
+  };
+
+  const handleAction = (action: VehicleAction) => {
+    const execute = async () => {
+      setActionLoading(action.key);
+      await new Promise((r) => setTimeout(r, 1200));
+      setActionLoading(null);
+
+      if (action.toggle) {
+        setActiveToggles((prev) => {
+          const next = new Set(prev);
+          if (next.has(action.key)) {
+            next.delete(action.key);
+            Alert.alert('Command Sent', `${action.label} has been deactivated.`);
+          } else {
+            next.add(action.key);
+            Alert.alert('Command Sent', `${action.label} command sent successfully.`);
+          }
+          return next;
+        });
+      } else {
+        Alert.alert('Command Sent', `${action.label} command sent successfully.`);
+      }
+    };
+
+    if (action.confirm && !activeToggles.has(action.key)) {
+      Alert.alert(
+        action.label,
+        action.confirm,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { text: 'Confirm', style: 'destructive', onPress: execute },
+        ]
+      );
+    } else {
+      execute();
     }
   };
 
@@ -233,6 +340,49 @@ export default function VehicleDetailScreen() {
             </View>
           </>
         )}
+
+        {/* ── Vehicle Actions ──────────────────────────────── */}
+        <SectionTitle title="Vehicle Actions" />
+        <View style={styles.actionsGrid}>
+          {ACTIONS.map((action) => {
+            const isActive  = activeToggles.has(action.key);
+            const isLoading = actionLoading === action.key;
+            const busy      = actionLoading !== null;
+
+            return (
+              <TouchableOpacity
+                key={action.key}
+                style={[
+                  styles.actionCell,
+                  isActive && styles.actionCellActive,
+                  isActive && { borderColor: action.color },
+                  busy && styles.actionCellDisabled,
+                ]}
+                onPress={() => handleAction(action)}
+                disabled={busy}
+                activeOpacity={0.75}
+              >
+                <View style={[styles.actionIconWrap, { backgroundColor: isActive ? action.color : action.bg }]}>
+                  {isLoading
+                    ? <ActivityIndicator size="small" color={isActive ? '#FFF' : action.color} />
+                    : <Ionicons name={action.icon as any} size={22} color={isActive ? '#FFF' : action.color} />}
+                </View>
+                <Text style={[styles.actionLabel, isActive && { color: action.color, fontWeight: '700' }]}>
+                  {action.toggle ? (isActive ? action.label.replace('Lock', 'Unlock').replace('Cut', 'Restore') : action.label) : action.label}
+                </Text>
+                {action.toggle && (
+                  <View style={[styles.actionToggleDot, { backgroundColor: isActive ? action.color : Colors.border }]} />
+                )}
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+        <View style={styles.actionsNote}>
+          <Ionicons name="information-circle-outline" size={14} color={Colors.textMuted} />
+          <Text style={styles.actionsNoteText}>
+            Commands are sent to the GPS device via the cellular network. Response time depends on signal strength.
+          </Text>
+        </View>
 
         {/* ── Mileage Settings ─────────────────────────────── */}
         {(() => {
@@ -409,28 +559,33 @@ export default function VehicleDetailScreen() {
         <SectionTitle title="Recent Trips" />
         {vehicleTrips.length > 0 ? (
           vehicleTrips.map((trip) => (
-            <TouchableOpacity
-              key={trip.id}
-              style={styles.tripRow}
-              onPress={() => router.push(`/trip/${trip.id}`)}
-              activeOpacity={0.85}
-            >
-              <View style={styles.tripLeft}>
+            <View key={trip.id} style={styles.tripRow}>
+              <TouchableOpacity
+                style={styles.tripMain}
+                onPress={() => router.push(`/trip/${trip.id}` as any)}
+                activeOpacity={0.85}
+              >
                 <Ionicons
                   name={trip.endTime ? 'checkmark-circle' : 'radio-button-on'}
                   size={20}
                   color={trip.endTime ? Colors.statusActive : Colors.accent}
                 />
-                <View>
-                  <Text style={styles.tripDist}>{trip.distance.toFixed(1)} km</Text>
-                  <Text style={styles.tripTime}>{new Date(trip.startTime).toLocaleDateString()}</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.tripDist}>{trip.distance.toFixed(1)} km  ·  {trip.driverName}</Text>
+                  <Text style={styles.tripTime}>{new Date(trip.startTime).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })}</Text>
                 </View>
-              </View>
-              <View style={styles.tripRight}>
-                <Text style={styles.tripDriver}>{trip.driverName}</Text>
                 <Ionicons name="chevron-forward" size={14} color={Colors.textMuted} />
-              </View>
-            </TouchableOpacity>
+              </TouchableOpacity>
+              {trip.route && trip.route.length > 0 && (
+                <TouchableOpacity
+                  style={styles.replayBtn}
+                  onPress={() => router.push(`/trip/replay/${trip.id}` as any)}
+                >
+                  <Ionicons name="play-circle" size={14} color={Colors.accent} />
+                  <Text style={styles.replayBtnText}>Replay</Text>
+                </TouchableOpacity>
+              )}
+            </View>
           ))
         ) : (
           <Text style={styles.emptyNote}>No trips recorded for this vehicle</Text>
@@ -662,15 +817,21 @@ const styles = StyleSheet.create({
 
   // Trips
   tripRow: {
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
     backgroundColor: Colors.cardBackground, borderRadius: Radius.md,
-    padding: Spacing.md, marginBottom: Spacing.xs, ...Shadow.sm,
+    marginBottom: Spacing.xs, overflow: 'hidden', ...Shadow.sm,
   },
-  tripLeft:   { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
-  tripDist:   { fontSize: FontSize.md, fontWeight: '700', color: Colors.textPrimary },
-  tripTime:   { fontSize: FontSize.xs, color: Colors.textSecondary },
-  tripRight:  { flexDirection: 'row', alignItems: 'center', gap: 4 },
-  tripDriver: { fontSize: FontSize.sm, color: Colors.textSecondary },
+  tripMain: {
+    flexDirection: 'row', alignItems: 'center', gap: Spacing.sm,
+    padding: Spacing.md,
+  },
+  tripDist:   { fontSize: FontSize.sm, fontWeight: '700', color: Colors.textPrimary },
+  tripTime:   { fontSize: FontSize.xs, color: Colors.textSecondary, marginTop: 2 },
+  replayBtn: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    paddingVertical: 8, borderTopWidth: 1, borderTopColor: Colors.divider,
+    backgroundColor: Colors.accent + '08',
+  },
+  replayBtnText: { fontSize: FontSize.sm, fontWeight: '700', color: Colors.accent },
   emptyNote:  { fontSize: FontSize.sm, color: Colors.textMuted, marginBottom: Spacing.sm },
 
   // Fuel
@@ -763,6 +924,42 @@ const styles = StyleSheet.create({
     ...Shadow.sm, shadowColor: Colors.accent,
   },
   sheetSaveText: { fontSize: FontSize.md, fontWeight: '800', color: '#FFF' },
+
+  // ── Vehicle Actions ───────────────────────────────────
+  actionsGrid: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 10,
+    marginBottom: Spacing.xs,
+  },
+  actionCell: {
+    width: '30%',
+    flexGrow: 1,
+    backgroundColor: Colors.cardBackground,
+    borderRadius: Radius.md,
+    borderWidth: 1.5, borderColor: Colors.border,
+    padding: 12,
+    alignItems: 'center', gap: 7,
+    ...Shadow.sm,
+  },
+  actionCellActive:   { backgroundColor: Colors.cardBackground },
+  actionCellDisabled: { opacity: 0.55 },
+  actionIconWrap: {
+    width: 46, height: 46, borderRadius: 23,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  actionLabel: {
+    fontSize: 11.5, fontWeight: '600',
+    color: Colors.textPrimary, textAlign: 'center',
+  },
+  actionToggleDot: {
+    width: 7, height: 7, borderRadius: 3.5,
+  },
+  actionsNote: {
+    flexDirection: 'row', alignItems: 'flex-start', gap: 6,
+    backgroundColor: Colors.backgroundLight,
+    borderRadius: Radius.sm, padding: 10, marginBottom: Spacing.sm,
+    borderWidth: 1, borderColor: Colors.border,
+  },
+  actionsNoteText: { flex: 1, fontSize: 11, color: Colors.textMuted, lineHeight: 15 },
 
   // Alerts
   alertRow: {

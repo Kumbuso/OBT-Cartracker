@@ -59,6 +59,7 @@ export default function TripsScreen() {
       </View>
 
       <FlatList
+        style={{ flex: 1 }}
         data={sorted}
         keyExtractor={(t) => t.id}
         contentContainerStyle={styles.list}

@@ -1,23 +1,25 @@
 /**
- * Device HTTP API — used by on-board gateways (Raspberry Pi, ESP32, OBD-II dongle
- * with WiFi/cellular) that POST telemetry over HTTPS instead of a raw TCP protocol.
+ * Device API — two distinct concerns in one router:
  *
- * Authentication: X-Device-Token header (stored as vehicle.deviceToken).
- * No user JWT is required — the token identifies the vehicle directly.
+ * A) Fleet device registry (user JWT auth)
+ *    Manage the Device table: register, list, update, delete, assign to vehicle.
+ *    GET    /api/devices              — list devices for the user's org
+ *    POST   /api/devices/register     — register a new device
+ *    PUT    /api/devices/:id          — update device (notes, firmware, status)
+ *    DELETE /api/devices/:id          — remove device
+ *    POST   /api/devices/:id/assign   — assign device to a vehicle (also sets vehicle.imei)
+ *    DELETE /api/devices/:id/assign   — unassign device from vehicle
  *
- * POST /api/devices/telemetry
- *   Full payload: GPS + OBD + fuel + sensor data in one request.
+ * B) Hardware gateway (X-Device-Token auth)
+ *    Used by on-board gateways (Raspberry Pi, ESP32, OBD-II dongle) that POST
+ *    telemetry over HTTPS instead of raw TCP protocol.
+ *    POST   /api/devices/telemetry    — full telemetry payload
+ *    POST   /api/devices/location     — GPS-only shortcut
+ *    GET    /api/devices/me           — vehicle config for the on-board gateway
  *
- * POST /api/devices/location
- *   GPS-only shortcut (subset of telemetry).
- *
- * GET /api/devices/me
- *   Returns the vehicle record linked to the device token — useful for
- *   on-board gateways to verify connectivity and retrieve config.
- *
- * Device token management (admin only, uses user JWT):
- * POST /api/devices/:vehicleId/token  — generate and assign a new token
- * DELETE /api/devices/:vehicleId/token — revoke the token
+ * C) Token management (admin JWT)
+ *    POST   /api/devices/:vehicleId/token   — generate hardware token
+ *    DELETE /api/devices/:vehicleId/token   — revoke hardware token
  */
 
 import { Router, Request, Response, NextFunction } from 'express';
@@ -185,5 +187,148 @@ router.delete(
     }
   },
 );
+
+// ── Fleet device registry (user JWT) ─────────────────────────────────────────
+
+const registerSchema = z.object({
+  serial:    z.string().min(1),
+  imei:      z.string().regex(/^\d{15,17}$/, 'IMEI must be 15-17 digits').optional().nullable(),
+  simNumber: z.string().optional().nullable(),
+  type:      z.enum(['gps', 'fuel', 'obd', 'dashcam', 'temp']),
+  notes:     z.string().optional(),
+  vehicleId: z.string().optional().nullable(),
+});
+
+const updateDeviceSchema = z.object({
+  serial:    z.string().min(1).optional(),
+  imei:      z.string().regex(/^\d{15,17}$/).optional().nullable(),
+  simNumber: z.string().optional().nullable(),
+  status:    z.enum(['online', 'offline', 'fault', 'low_battery']).optional(),
+  firmware:  z.string().optional(),
+  notes:     z.string().optional(),
+  fault:     z.string().optional().nullable(),
+});
+
+const assignSchema = z.object({
+  vehicleId: z.string(),
+});
+
+// List all devices for the org
+router.get('/', authenticate, async (req, res, next) => {
+  try {
+    const devices = await prisma.device.findMany({
+      where: { orgId: req.user!.orgId },
+      include: { vehicle: { select: { id: true, plate: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(devices);
+  } catch (err) { next(err); }
+});
+
+// Register a new device
+router.post('/register', authenticate, requireRole('admin', 'manager'), validate(registerSchema), async (req, res, next) => {
+  try {
+    const { vehicleId, ...rest } = req.body as z.infer<typeof registerSchema>;
+
+    // Validate vehicleId belongs to this org if provided
+    if (vehicleId) {
+      const v = await prisma.vehicle.findFirst({ where: { id: vehicleId, orgId: req.user!.orgId } });
+      if (!v) throw new AppError(400, 'Vehicle not found in your organisation');
+    }
+
+    const device = await prisma.device.create({
+      data: { ...rest, orgId: req.user!.orgId, vehicleId: vehicleId ?? null },
+      include: { vehicle: { select: { id: true, plate: true } } },
+    });
+
+    // If a vehicle is assigned and the device has an IMEI, write it to the vehicle
+    if (vehicleId && rest.imei) {
+      await prisma.vehicle.update({ where: { id: vehicleId }, data: { imei: rest.imei } });
+    }
+
+    res.status(201).json(device);
+  } catch (err) { next(err); }
+});
+
+// Update device metadata
+router.put('/:id', authenticate, requireRole('admin', 'manager'), validate(updateDeviceSchema), async (req, res, next) => {
+  try {
+    const existing = await prisma.device.findFirst({ where: { id: req.params.id, orgId: req.user!.orgId } });
+    if (!existing) throw new AppError(404, 'Device not found');
+
+    const device = await prisma.device.update({
+      where: { id: req.params.id },
+      data: req.body,
+      include: { vehicle: { select: { id: true, plate: true } } },
+    });
+    res.json(device);
+  } catch (err) { next(err); }
+});
+
+// Assign device to a vehicle — also syncs vehicle.imei
+router.post('/:id/assign', authenticate, requireRole('admin', 'manager'), validate(assignSchema), async (req, res, next) => {
+  try {
+    const device = await prisma.device.findFirst({ where: { id: req.params.id, orgId: req.user!.orgId } });
+    if (!device) throw new AppError(404, 'Device not found');
+
+    const vehicle = await prisma.vehicle.findFirst({ where: { id: req.body.vehicleId, orgId: req.user!.orgId } });
+    if (!vehicle) throw new AppError(404, 'Vehicle not found');
+
+    // Update device → vehicle link
+    const updated = await prisma.device.update({
+      where: { id: req.params.id },
+      data: { vehicleId: vehicle.id },
+      include: { vehicle: { select: { id: true, plate: true } } },
+    });
+
+    // Sync vehicle.imei from the device's IMEI
+    if (device.imei) {
+      await prisma.vehicle.update({ where: { id: vehicle.id }, data: { imei: device.imei } });
+    }
+
+    res.json(updated);
+  } catch (err) { next(err); }
+});
+
+// Unassign device from vehicle — clears vehicle.imei if it was set by this device
+router.delete('/:id/assign', authenticate, requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    const device = await prisma.device.findFirst({ where: { id: req.params.id, orgId: req.user!.orgId } });
+    if (!device) throw new AppError(404, 'Device not found');
+
+    if (device.vehicleId && device.imei) {
+      const vehicle = await prisma.vehicle.findUnique({ where: { id: device.vehicleId } });
+      if (vehicle?.imei === device.imei) {
+        await prisma.vehicle.update({ where: { id: device.vehicleId }, data: { imei: null } });
+      }
+    }
+
+    const updated = await prisma.device.update({
+      where: { id: req.params.id },
+      data: { vehicleId: null },
+      include: { vehicle: { select: { id: true, plate: true } } },
+    });
+    res.json(updated);
+  } catch (err) { next(err); }
+});
+
+// Delete a device
+router.delete('/:id', authenticate, requireRole('admin', 'manager'), async (req, res, next) => {
+  try {
+    const existing = await prisma.device.findFirst({ where: { id: req.params.id, orgId: req.user!.orgId } });
+    if (!existing) throw new AppError(404, 'Device not found');
+
+    // Clear vehicle.imei if it was set by this device
+    if (existing.vehicleId && existing.imei) {
+      const vehicle = await prisma.vehicle.findUnique({ where: { id: existing.vehicleId } });
+      if (vehicle?.imei === existing.imei) {
+        await prisma.vehicle.update({ where: { id: existing.vehicleId }, data: { imei: null } });
+      }
+    }
+
+    await prisma.device.delete({ where: { id: req.params.id } });
+    res.status(204).send();
+  } catch (err) { next(err); }
+});
 
 export default router;

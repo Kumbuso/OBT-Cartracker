@@ -52,7 +52,7 @@ export default function TabLayout() {
         options={{
           title: 'Dashboard',
           tabBarLabel: 'Dashboard',
-          tabBarIcon: ({ focused }) => <TabIcon name="home" focused={focused} />,
+          tabBarIcon: ({ focused }) => <TabIcon name="grid" focused={focused} />,
           headerShown: false,
         }}
       />
@@ -66,11 +66,7 @@ export default function TabLayout() {
       />
       <Tabs.Screen
         name="map"
-        options={{
-          title: 'Map',
-          tabBarLabel: 'Map',
-          tabBarIcon: ({ focused }) => <TabIcon name="map" focused={focused} />,
-        }}
+        options={{ href: null }}
       />
       <Tabs.Screen
         name="trips"
